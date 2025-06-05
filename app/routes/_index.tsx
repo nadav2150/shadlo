@@ -1,0 +1,147 @@
+import type { MetaFunction } from "@remix-run/node";
+import { Stats } from "~/components/Stats";
+import { Alerts } from "~/components/Alerts";
+import { Button } from "~/components/ui/button";
+import { Cloud, Shield, Scan, FileText, Eye, Plus, CheckCircle, AlertCircle } from "lucide-react";
+
+export const meta: MetaFunction = () => {
+  return [
+    { title: "New Remix App" },
+    { name: "description", content: "Welcome to Remix!" },
+  ];
+};
+
+const Index = () => {
+  const handleConnect = (service: string) => {
+    console.log(`Connecting to ${service}...`);
+    // TODO: Implement connection logic
+  };
+
+  const connectedServices = {
+    AWS: true,
+    Azure: false,
+    Okta: true
+  };
+
+  return (
+    <div className="space-y-8">
+      {/* Header Section */}
+      <div className="bg-gradient-to-r from-blue-600/10 to-purple-600/10 rounded-xl p-6 border border-gray-800">
+        <h1 className="text-3xl font-bold text-white mb-2">Security Dashboard</h1>
+        <p className="text-gray-300 text-lg">
+          Monitor and manage your cloud security posture across all platforms
+        </p>
+      </div>
+
+      {/* Stats Section */}
+      <Stats />
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+        {/* Alerts - Takes up 2 columns on xl screens */}
+        <div className="xl:col-span-2">
+          <Alerts />
+        </div>
+        
+        {/* Service Connections */}
+        <div className="bg-white/5 border border-gray-800 rounded-xl p-6">
+          <div className="flex items-center gap-2 mb-6">
+            <Cloud className="w-6 h-6 text-secondary" />
+            <h2 className="text-xl font-semibold text-white">Cloud Services</h2>
+          </div>
+          
+          <div className="space-y-4 mb-8">
+            {Object.entries(connectedServices).map(([service, isConnected]) => (
+              <div key={service} className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
+                  <span className="font-medium text-white">{service}</span>
+                  {isConnected && <CheckCircle className="w-4 h-4 text-green-500" />}
+                </div>
+                <Button
+                  onClick={() => handleConnect(service)}
+                  size="default"
+                  className={`$${
+                    isConnected 
+                      ? 'bg-green-600 hover:bg-green-700' 
+                      : service === 'AWS' 
+                        ? 'bg-orange-600 hover:bg-orange-700'
+                        : service === 'Azure'
+                          ? 'bg-blue-600 hover:bg-blue-700'
+                          : 'bg-blue-500 hover:bg-blue-600'
+                  } text-white`}
+                >
+                  {isConnected ? 'Manage' : 'Connect'}
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <Button 
+            className="w-full bg-secondary hover:bg-secondary/90 text-white flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            Add New Service
+          </Button>
+        </div>
+      </div>
+
+      {/* Quick Actions Grid */}
+      <div className="bg-white/5 border border-gray-800 rounded-xl p-6">
+        <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
+          <Shield className="w-6 h-6 text-secondary" />
+          Quick Security Actions
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <button className="group p-6 bg-gradient-to-br from-red-500/10 to-red-600/10 hover:from-red-500/20 hover:to-red-600/20 border border-red-500/20 rounded-lg transition-all duration-200 text-left">
+            <div className="flex items-center gap-3 mb-3">
+              <Scan className="w-6 h-6 text-red-400 group-hover:text-red-300" />
+              <h3 className="font-semibold text-white">Shadow Scan</h3>
+            </div>
+            <p className="text-sm text-gray-400 group-hover:text-gray-300">
+              Discover hidden permissions and access patterns
+            </p>
+          </button>
+
+          <button className="group p-6 bg-gradient-to-br from-blue-500/10 to-blue-600/10 hover:from-blue-500/20 hover:to-blue-600/20 border border-blue-500/20 rounded-lg transition-all duration-200 text-left">
+            <div className="flex items-center gap-3 mb-3">
+              <Eye className="w-6 h-6 text-blue-400 group-hover:text-blue-300" />
+              <h3 className="font-semibold text-white">Access Review</h3>
+            </div>
+            <p className="text-sm text-gray-400 group-hover:text-gray-300">
+              Review and audit user access policies
+            </p>
+          </button>
+
+          <button className="group p-6 bg-gradient-to-br from-green-500/10 to-green-600/10 hover:from-green-500/20 hover:to-green-600/20 border border-green-500/20 rounded-lg transition-all duration-200 text-left">
+            <div className="flex items-center gap-3 mb-3">
+              <FileText className="w-6 h-6 text-green-400 group-hover:text-green-300" />
+              <h3 className="font-semibold text-white">Security Report</h3>
+            </div>
+            <p className="text-sm text-gray-400 group-hover:text-gray-300">
+              Generate comprehensive security analysis
+            </p>
+          </button>
+        </div>
+      </div>
+
+      {/* Security Status Banner */}
+      <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl p-6">
+        <div className="flex items-center gap-4">
+          <AlertCircle className="w-8 h-8 text-yellow-400 flex-shrink-0" />
+          <div>
+            <h3 className="text-lg font-semibold text-white mb-1">Security Status: Medium Risk</h3>
+            <p className="text-gray-300">
+              3 critical issues detected across your cloud infrastructure. 
+              <button className="text-secondary hover:text-secondary/80 ml-2 underline">
+                View Details →
+              </button>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Index;
