@@ -4,35 +4,36 @@ import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
 
 interface Policy {
-  type: 'attached';
   name: string;
-  arn: string;
   description?: string;
-  createDate?: Date;
-  updateDate?: Date;
+  createDate: string;
+  updateDate: string;
+  type: 'inline' | 'managed';
+}
+
+interface AccessKey {
+  id: string;
+  createDate: string;
+  lastUsed?: string;
+  status: 'Active' | 'Inactive';
 }
 
 interface IAMUser {
   userName: string;
-  arn: string;
-  createDate: Date;
-  lastUsed: Date | undefined;
-  groups: string[];
-  accessKeys: string[];
-  policies: {
-    inline: string[];
-    attached: Policy[];
-  };
-  riskLevel: 'low' | 'medium' | 'high';
+  createDate: string;
+  lastUsed?: string;
+  policies: Policy[];
   hasMFA: boolean;
-  riskAssessment: {
-    level: 'low' | 'medium' | 'high' | 'critical';
+  accessKeys?: AccessKey[];
+  riskAssessment?: {
+    riskLevel: 'low' | 'medium' | 'high';
     score: number;
     factors: string[];
     shadowPermissions: {
       type: string;
       description: string;
-      details: string[];
+      severity: 'low' | 'medium' | 'high';
+      details: string;
     }[];
   };
 }
@@ -235,7 +236,7 @@ export default function Permissions() {
                   </thead>
                   <tbody className="divide-y divide-[#23272f]">
                     {(users || []).map((user, index) => {
-                      const riskInfo = getRiskLevelInfo(user?.riskAssessment?.level || 'low');
+                      const riskInfo = getRiskLevelInfo(user?.riskAssessment?.riskLevel || 'low');
                       const RiskIcon = riskInfo.icon;
                       
                       return (
@@ -312,16 +313,16 @@ export default function Permissions() {
                           <td className="px-6 py-5 whitespace-nowrap rounded-r-xl">
                             <div className="space-y-2">
                               {/* Inline Policies */}
-                              {(user?.policies?.inline || []).length > 0 && (
+                              {(user?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
                                 <div>
                                   <div className="text-sm text-gray-400 mb-1">Inline Policies:</div>
                                   <div className="flex flex-wrap gap-1">
-                                    {(user?.policies?.inline || []).map(policy => (
+                                    {(user?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
                                       <span 
-                                        key={policy}
+                                        key={policy.name}
                                         className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs"
                                       >
-                                        {policy}
+                                        {policy.name}
                                       </span>
                                     ))}
                                   </div>
@@ -329,13 +330,13 @@ export default function Permissions() {
                               )}
 
                               {/* Attached Policies */}
-                              {(user?.policies?.attached || []).length > 0 && (
+                              {(user?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
                                 <div>
                                   <div className="text-sm text-gray-400 mb-1">Attached Policies:</div>
                                   <div className="flex flex-wrap gap-1">
-                                    {(user?.policies?.attached || []).map(policy => (
+                                    {(user?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
                                       <div 
-                                        key={policy.arn}
+                                        key={policy.name}
                                         className="group relative"
                                       >
                                         <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs cursor-help">
@@ -354,9 +355,6 @@ export default function Permissions() {
                                             <div className="text-gray-500">
                                               Updated: {policy.updateDate ? new Date(policy.updateDate).toLocaleDateString() : 'Unknown'}
                                             </div>
-                                            <div className="text-gray-500 break-all">
-                                              ARN: {policy.arn}
-                                            </div>
                                           </div>
                                         </div>
                                       </div>
@@ -365,7 +363,7 @@ export default function Permissions() {
                                 </div>
                               )}
 
-                              {(!user?.policies?.inline?.length && !user?.policies?.attached?.length) && (
+                              {(!user?.policies?.filter(p => p.type === 'inline')?.length && !user?.policies?.filter(p => p.type === 'managed')?.length) && (
                                 <span className="text-gray-500">No policies</span>
                               )}
                             </div>
