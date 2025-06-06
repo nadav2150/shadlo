@@ -244,10 +244,13 @@ export default function ProvidersPage() {
   };
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex items-center gap-3 mb-8">
-        <Cloud className="w-6 h-6 text-blue-400" />
-        <h1 className="text-2xl font-bold text-white">Cloud Providers</h1>
+    <div className="space-y-8">
+      {/* Header Section */}
+      <div className="bg-gradient-to-r from-blue-600/10 to-purple-600/10 rounded-xl p-6 border border-gray-800">
+        <h1 className="text-3xl font-bold text-white mb-2">Cloud Providers</h1>
+        <p className="text-gray-300 text-lg">
+          Monitor and manage your cloud security posture across all platforms
+        </p>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
