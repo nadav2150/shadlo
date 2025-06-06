@@ -6,6 +6,9 @@ import { Alerts } from "~/components/Alerts";
 import { Button } from "~/components/ui/button";
 import { Cloud, Shield, Scan, FileText, Eye, Plus, CheckCircle, AlertCircle, Settings } from "lucide-react";
 import { getAwsCredentials } from "~/utils/session.server";
+import { getIAMUsers } from "~/lib/iam/aws.server";
+import { calculateRiskScore } from "~/lib/iam/risk-assessment";
+import type { ShadowPermissionRisk, UserDetails } from "~/lib/iam/types";
 
 export const meta: MetaFunction = () => {
   return [
@@ -16,11 +19,26 @@ export const meta: MetaFunction = () => {
 
 export const loader: LoaderFunction = async ({ request }) => {
   const credentials = await getAwsCredentials(request);
-  return json({ credentials });
+  
+  // Get IAM users and calculate their risk assessments
+  const users = credentials ? await getIAMUsers(credentials) : [];
+  const shadowPermissions: ShadowPermissionRisk[] = [];
+  
+  // Calculate risk scores and collect shadow permissions
+  users.forEach((user: UserDetails) => {
+    const riskAssessment = calculateRiskScore(user);
+    shadowPermissions.push(...riskAssessment.shadowPermissions);
+  });
+
+  return json({ 
+    credentials,
+    shadowPermissions,
+    users
+  });
 };
 
 const Index = () => {
-  const { credentials } = useLoaderData<typeof loader>();
+  const { credentials, shadowPermissions, users } = useLoaderData<typeof loader>();
 
   const handleConnect = (service: string) => {
     console.log(`Connecting to ${service}...`);
@@ -44,12 +62,12 @@ const Index = () => {
       </div>
 
       {/* Stats Section */}
-      <Stats />
+      <Stats shadowPermissions={shadowPermissions} users={users} />
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         {/* Alerts - Takes up 2 columns on xl screens */}
         <div className="xl:col-span-2">
-          <Alerts />
+          <Alerts shadowPermissions={shadowPermissions} />
         </div>
         
         {/* Service Connections */}
