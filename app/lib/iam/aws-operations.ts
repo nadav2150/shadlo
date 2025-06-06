@@ -1,5 +1,5 @@
-import { IAMClient, ListUsersCommand, ListUserPoliciesCommand, ListAttachedUserPoliciesCommand, ListAccessKeysCommand, ListMFADevicesCommand, AttachedPolicy, AccessKeyMetadata } from '@aws-sdk/client-iam';
-import { UserDetails, Policy, AccessKey } from './types';
+import { IAMClient, ListUsersCommand, ListUserPoliciesCommand, ListAttachedUserPoliciesCommand, ListAccessKeysCommand, ListMFADevicesCommand, ListRolesCommand, ListRolePoliciesCommand, ListAttachedRolePoliciesCommand, AttachedPolicy, AccessKeyMetadata } from '@aws-sdk/client-iam';
+import { UserDetails, Policy, AccessKey, RoleDetails } from './types';
 
 export async function getIAMUsers(iamClient: IAMClient): Promise<UserDetails[]> {
   const { Users } = await iamClient.send(new ListUsersCommand({}));
@@ -74,4 +74,60 @@ async function getUserAccessKeys(iamClient: IAMClient, userName: string): Promis
 async function getUserMFADevices(iamClient: IAMClient, userName: string): Promise<any[]> {
   const { MFADevices } = await iamClient.send(new ListMFADevicesCommand({ UserName: userName }));
   return MFADevices || [];
+}
+
+export async function getIAMRoles(iamClient: IAMClient): Promise<RoleDetails[]> {
+  const { Roles } = await iamClient.send(new ListRolesCommand({}));
+  if (!Roles) return [];
+
+  const roles: RoleDetails[] = await Promise.all(
+    Roles.map(async (role) => {
+      const policies = await getRolePolicies(iamClient, role.RoleName!);
+
+      return {
+        roleName: role.RoleName!,
+        createDate: role.CreateDate!.toISOString(),
+        lastUsed: role.RoleLastUsed?.LastUsedDate?.toISOString(),
+        description: role.Description,
+        trustPolicy: role.AssumeRolePolicyDocument,
+        provider: 'aws' as const,
+        type: 'role' as const,
+        policies
+      };
+    })
+  );
+
+  return roles;
+}
+
+async function getRolePolicies(iamClient: IAMClient, roleName: string): Promise<Policy[]> {
+  const [inlinePolicies, attachedPolicies] = await Promise.all([
+    iamClient.send(new ListRolePoliciesCommand({ RoleName: roleName })),
+    iamClient.send(new ListAttachedRolePoliciesCommand({ RoleName: roleName }))
+  ]);
+
+  const policies: Policy[] = [];
+
+  // Add inline policies
+  if (inlinePolicies.PolicyNames) {
+    policies.push(...inlinePolicies.PolicyNames.map(name => ({
+      name,
+      type: 'inline' as const,
+      createDate: new Date().toISOString(), // Inline policies don't have create dates
+      updateDate: new Date().toISOString()  // Inline policies don't have update dates
+    })));
+  }
+
+  // Add attached policies
+  if (attachedPolicies.AttachedPolicies) {
+    policies.push(...attachedPolicies.AttachedPolicies.map((policy: AttachedPolicy) => ({
+      name: policy.PolicyName!,
+      description: policy.PolicyArn?.split('/').pop() || undefined,
+      type: 'managed' as const,
+      createDate: new Date().toISOString(), // Use current date as fallback
+      updateDate: new Date().toISOString()  // Use current date as fallback
+    })));
+  }
+
+  return policies;
 } 

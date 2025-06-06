@@ -33,6 +33,7 @@ export interface UserDetails {
   policies: Policy[];
   hasMFA: boolean;
   accessKeys?: AccessKey[];
+  provider?: 'aws' | 'azure' | 'gcp';
   riskAssessment?: RiskAssessment;
 }
 
@@ -48,4 +49,16 @@ export interface ShadowPermissionRisk {
   description: string;
   severity: 'low' | 'medium' | 'high';
   details: string;
+}
+
+export interface RoleDetails {
+  roleName: string;
+  createDate: string;
+  lastUsed?: string;
+  policies: Policy[];
+  provider: 'aws' | 'azure' | 'gcp';
+  type: 'role';
+  description?: string;
+  trustPolicy?: string;
+  riskAssessment?: RiskAssessment;
 } 

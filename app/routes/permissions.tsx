@@ -26,6 +26,29 @@ interface IAMUser {
   hasMFA: boolean;
   accessKeys?: AccessKey[];
   provider: 'aws' | 'azure' | 'gcp';
+  type: 'user';
+  riskAssessment?: {
+    riskLevel: 'low' | 'medium' | 'high';
+    score: number;
+    factors: string[];
+    shadowPermissions: {
+      type: string;
+      description: string;
+      severity: 'low' | 'medium' | 'high';
+      details: string;
+    }[];
+  };
+}
+
+interface IAMRole {
+  roleName: string;
+  createDate: string;
+  lastUsed?: string;
+  policies: Policy[];
+  provider: 'aws' | 'azure' | 'gcp';
+  type: 'role';
+  description?: string;
+  trustPolicy?: string;
   riskAssessment?: {
     riskLevel: 'low' | 'medium' | 'high';
     score: number;
@@ -41,6 +64,7 @@ interface IAMUser {
 
 interface LoaderData {
   users: IAMUser[];
+  roles: IAMRole[];
   error?: string;
 }
 
@@ -54,8 +78,8 @@ export const loader: LoaderFunction = async ({ request }) => {
     const cookieHeader = request.headers.get("Cookie");
     console.log("Debug - Permissions route cookie:", cookieHeader);
     
-    // Make the request to the IAM users API using the full URL and forwarding cookies
-    const response = await fetch(`${baseUrl}/api/iam-users`, {
+    // Make the request to the IAM API using the full URL and forwarding cookies
+    const response = await fetch(`${baseUrl}/api/iam-entities`, {
       headers: {
         Cookie: cookieHeader || "",
       },
@@ -64,14 +88,17 @@ export const loader: LoaderFunction = async ({ request }) => {
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(data.message || data.error || "Failed to fetch IAM users");
+      throw new Error(data.message || data.error || "Failed to fetch IAM entities");
     }
     
-    return json<LoaderData>({ users: data.users });
+    return json<LoaderData>({ 
+      users: data.users || [], 
+      roles: data.roles || [] 
+    });
   } catch (error) {
     console.error("Error in loader:", error);
     return json<LoaderData>(
-      { users: [], error: error instanceof Error ? error.message : "Failed to fetch IAM users" },
+      { users: [], roles: [], error: error instanceof Error ? error.message : "Failed to fetch IAM entities" },
       { status: 500 }
     );
   }
@@ -183,11 +210,19 @@ function getProviderInfo(provider: 'aws' | 'azure' | 'gcp') {
         color: 'text-green-500',
         bgColor: 'bg-green-500/10'
       };
+    default:
+      // Default to AWS if provider is undefined or unknown
+      return {
+        icon: '/amazon-aws.svg',
+        label: 'AWS',
+        color: 'text-orange-500',
+        bgColor: 'bg-orange-500/10'
+      };
   }
 }
 
 export default function Permissions() {
-  const { users = [], error } = useLoaderData<LoaderData>();
+  const { users = [], roles = [], error } = useLoaderData<LoaderData>();
 
   // Add early return for error state
   if (error) {
@@ -206,23 +241,36 @@ export default function Permissions() {
 
   // Calculate total access keys safely
   const totalAccessKeys = users?.reduce((acc, user) => acc + (user?.accessKeys?.length || 0), 0) || 0;
+  const totalEntities = (users?.length || 0) + (roles?.length || 0);
 
   return (
     <div className="flex flex-col h-screen bg-[#181C23]">
       {/* Header Section - Fixed height */}
       <div className="flex-none p-8 pt-6">
         <h1 className="text-4xl font-bold text-white leading-tight">Permissions Analysis</h1>
-        <p className="text-gray-400 text-base mt-1">Detailed view of user permissions and access patterns</p>
+        <p className="text-gray-400 text-base mt-1">Detailed view of IAM users, roles, and access patterns</p>
       </div>
 
       {/* Stats Cards - Fixed height */}
       <div className="flex-none px-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-6">
           <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
             <div className="mb-4">
-              <span className="text-lg font-semibold text-white">Admin Access</span>
+              <span className="text-lg font-semibold text-white">Total Entities</span>
             </div>
-            <div className="text-2xl font-extrabold text-white mb-1">{users?.length || 0} IAM users</div>
+            <div className="text-2xl font-extrabold text-white mb-1">{totalEntities} IAM entities</div>
+          </div>
+          <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
+            <div className="mb-4">
+              <span className="text-lg font-semibold text-white">IAM Users</span>
+            </div>
+            <div className="text-2xl font-extrabold text-white mb-1">{users?.length || 0} users</div>
+          </div>
+          <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
+            <div className="mb-4">
+              <span className="text-lg font-semibold text-white">IAM Roles</span>
+            </div>
+            <div className="text-2xl font-extrabold text-white mb-1">{roles?.length || 0} roles</div>
           </div>
           <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
             <div className="mb-4">
@@ -232,14 +280,6 @@ export default function Permissions() {
               {totalAccessKeys} active API keys
             </div>
           </div>
-          <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
-            <div className="mb-4">
-              <span className="text-lg font-semibold text-white">Risk Level</span>
-            </div>
-            <div className="text-2xl font-extrabold text-white mb-1">
-              {error ? "Error fetching data" : "Medium - Active monitoring"}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -247,7 +287,7 @@ export default function Permissions() {
       <div className="flex-1 px-8 pb-8 min-h-0">
         <div className="h-full flex flex-col">
           <div className="flex-none mb-4">
-            <h2 className="text-2xl font-bold text-white">IAM Users</h2>
+            <h2 className="text-2xl font-bold text-white">IAM Entities</h2>
           </div>
           
           {error ? (
@@ -260,8 +300,9 @@ export default function Permissions() {
                 <table className="w-full text-lg text-left">
                   <thead className="sticky top-0 z-10 text-lg text-blue-300 uppercase bg-[#1a1f28]">
                     <tr>
+                      <th className="px-6 py-4 font-semibold">Type</th>
                       <th className="px-6 py-4 font-semibold">Provider</th>
-                      <th className="px-6 py-4 font-semibold">Username</th>
+                      <th className="px-6 py-4 font-semibold">Name</th>
                       <th className="px-6 py-4 font-semibold">Created</th>
                       <th className="px-6 py-4 font-semibold">Last Used</th>
                       <th className="px-6 py-4 font-semibold">MFA</th>
@@ -270,27 +311,34 @@ export default function Permissions() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#23272f]">
+                    {/* Render Users */}
                     {(users || []).map((user, index) => {
                       const riskInfo = getRiskLevelInfo(user?.riskAssessment?.riskLevel || 'low');
                       const RiskIcon = riskInfo.icon;
+                      const providerInfo = getProviderInfo(user.provider);
                       
                       return (
                         <tr 
-                          key={user?.userName || index}
+                          key={`user-${user?.userName || index}`}
                           className="hover:bg-[#282d37] transition-colors duration-200"
                         >
-                          <td className="px-6 py-5 whitespace-nowrap rounded-l-xl">
+                          <td className="px-6 py-5 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <User className="w-5 h-5 text-blue-400" />
+                              <span className="text-blue-400">User</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 whitespace-nowrap">
                             <div className="flex items-center justify-center">
                               <img 
-                                src="/amazon-aws.svg" 
-                                alt="AWS"
+                                src={providerInfo.icon}
+                                alt={providerInfo.label}
                                 className="w-8 h-8 invert brightness-0"
                               />
                             </div>
                           </td>
                           <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
                             <div className="flex items-center gap-2">
-                              <User className="w-5 h-5 text-blue-400" />
                               <a 
                                 href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/users/${user?.userName}`}
                                 target="_blank"
@@ -354,7 +402,7 @@ export default function Permissions() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-5 whitespace-nowrap rounded-r-xl">
+                          <td className="px-6 py-5 whitespace-nowrap">
                             <div className="space-y-2">
                               {/* Inline Policies */}
                               {(user?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
@@ -408,6 +456,148 @@ export default function Permissions() {
                               )}
 
                               {(!user?.policies?.filter(p => p.type === 'inline')?.length && !user?.policies?.filter(p => p.type === 'managed')?.length) && (
+                                <span className="text-gray-500">No policies</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {/* Render Roles */}
+                    {(roles || []).map((role, index) => {
+                      const riskInfo = getRiskLevelInfo(role?.riskAssessment?.riskLevel || 'low');
+                      const RiskIcon = riskInfo.icon;
+                      const providerInfo = getProviderInfo(role.provider);
+                      
+                      return (
+                        <tr 
+                          key={`role-${role?.roleName || index}`}
+                          className="hover:bg-[#282d37] transition-colors duration-200"
+                        >
+                          <td className="px-6 py-5 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <Shield className="w-5 h-5 text-purple-400" />
+                              <span className="text-purple-400">Role</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 whitespace-nowrap">
+                            <div className="flex items-center justify-center">
+                              <img 
+                                src={providerInfo.icon}
+                                alt={providerInfo.label}
+                                className="w-8 h-8 invert brightness-0"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <a 
+                                href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/roles/${role?.roleName}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-purple-400 hover:text-purple-300 transition-colors"
+                              >
+                                {role?.roleName || 'Unknown'}
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 whitespace-nowrap text-gray-300">
+                            {role?.createDate ? new Date(role.createDate).toLocaleDateString() : 'N/A'}
+                          </td>
+                          <td className="px-6 py-5 whitespace-nowrap text-gray-300">
+                            {role?.lastUsed 
+                              ? new Date(role.lastUsed).toLocaleDateString()
+                              : "Never"
+                            }
+                          </td>
+                          <td className="px-6 py-5 whitespace-nowrap">
+                            <span className="text-gray-500">N/A</span>
+                          </td>
+                          <td className="px-6 py-5 whitespace-nowrap">
+                            <div className="group relative inline-block">
+                              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor} cursor-help`}>
+                                <RiskIcon className={`w-4 h-4 ${riskInfo.color}`} />
+                                <span className={`text-sm font-medium ${riskInfo.color}`}>
+                                  {riskInfo.label}
+                                </span>
+                              </div>
+                              
+                              {/* Risk Factors Tooltip */}
+                              <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                                <div className="text-xs space-y-3">
+                                  <div className="font-semibold text-white">Risk Assessment</div>
+                                  <div className="text-gray-400">
+                                    Overall Score: {role?.riskAssessment?.score || 0}
+                                  </div>
+                                  <div className="space-y-1">
+                                    <div className="font-semibold text-white">Risk Factors</div>
+                                    <ul className="list-disc list-inside space-y-1">
+                                      {role?.riskAssessment?.factors.map((factor, i) => (
+                                        <li key={i} className="text-gray-300">{factor}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 whitespace-nowrap">
+                            <div className="space-y-2">
+                              {/* Inline Policies */}
+                              {(role?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
+                                <div>
+                                  <div className="text-sm text-gray-400 mb-1">Inline Policies:</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {(role?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
+                                      <span 
+                                        key={policy.name}
+                                        className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs"
+                                      >
+                                        {policy.name}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Attached Policies */}
+                              {(role?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
+                                <div>
+                                  <div className="text-sm text-gray-400 mb-1">Attached Policies:</div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {(role?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
+                                      <div 
+                                        key={policy.name}
+                                        className="group relative"
+                                      >
+                                        <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs cursor-help">
+                                          {policy.name}
+                                        </span>
+                                        {/* Policy Tooltip */}
+                                        <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                          <div className="text-xs space-y-1">
+                                            <div className="font-semibold text-white">{policy.name}</div>
+                                            {policy.description && (
+                                              <div className="text-gray-400">{policy.description}</div>
+                                            )}
+                                            <div className="text-gray-500">
+                                              Created: {policy.createDate ? new Date(policy.createDate).toLocaleDateString() : 'Unknown'}
+                                            </div>
+                                            <div className="text-gray-500">
+                                              Updated: {policy.updateDate ? new Date(policy.updateDate).toLocaleDateString() : 'Unknown'}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {(!role?.policies?.filter(p => p.type === 'inline')?.length && 
+                                !role?.policies?.filter(p => p.type === 'managed')?.length) && (
                                 <span className="text-gray-500">No policies</span>
                               )}
                             </div>
