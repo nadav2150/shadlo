@@ -66,7 +66,11 @@ interface IAMRole {
 interface LoaderData {
   users: IAMUser[];
   roles: IAMRole[];
-  error?: string;
+  error: string | null;
+  credentials?: {
+    accessKeyId: string;
+    region: string;
+  } | null;
 }
 
 export const loader: LoaderFunction = async ({ request }) => {
@@ -77,7 +81,6 @@ export const loader: LoaderFunction = async ({ request }) => {
     
     // Get the cookie header from the original request
     const cookieHeader = request.headers.get("Cookie");
-    console.log("Debug - Permissions route cookie:", cookieHeader);
     
     // Make the request to the IAM API using the full URL and forwarding cookies
     const response = await fetch(`${baseUrl}/api/iam-entities`, {
@@ -87,20 +90,30 @@ export const loader: LoaderFunction = async ({ request }) => {
     });
     
     const data = await response.json();
+    console.log("Debug - API Response:", { 
+      status: response.status, 
+      ok: response.ok, 
+      hasCredentials: !!data.credentials,
+      userCount: data.users?.length,
+      roleCount: data.roles?.length
+    });
     
-    if (!response.ok) {
-      throw new Error(data.message || data.error || "Failed to fetch IAM entities");
-    }
-    
+    // Return the data even if response is not ok, but include the error
     return json<LoaderData>({ 
       users: data.users || [], 
-      roles: data.roles || [] 
+      roles: data.roles || [],
+      credentials: data.credentials || null,
+      error: data.error || null
     });
   } catch (error) {
     console.error("Error in loader:", error);
     return json<LoaderData>(
-      { users: [], roles: [], error: error instanceof Error ? error.message : "Failed to fetch IAM entities" },
-      { status: 500 }
+      { 
+        users: [], 
+        roles: [], 
+        credentials: null,
+        error: error instanceof Error ? error.message : "Failed to fetch IAM data"
+      }
     );
   }
 };
@@ -226,12 +239,20 @@ type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' |
 type SortDirection = 'asc' | 'desc';
 
 export default function Permissions() {
-  const { users = [], roles = [], error } = useLoaderData<LoaderData>();
+  const { users = [], roles = [], credentials, error } = useLoaderData<LoaderData>();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  // Debug log to check what data we have
+  console.log("Debug - Component Data:", {
+    hasCredentials: !!credentials,
+    userCount: users.length,
+    roleCount: roles.length,
+    error
+  });
 
   // Handle sort click
   const handleSort = (field: SortField) => {
@@ -318,21 +339,6 @@ export default function Permissions() {
     });
   }, [users, roles, searchQuery, typeFilter, riskFilter, sortField, sortDirection]);
 
-  // Add early return for error state
-  if (error) {
-    return (
-      <div className="p-8 pt-6 w-full h-screen bg-[#181C23]">
-        <div>
-          <h1 className="text-4xl font-bold text-white leading-tight">Permissions Analysis</h1>
-          <p className="text-gray-400 text-base mt-1">Detailed view of user permissions and access patterns</p>
-        </div>
-        <div className="mt-8 bg-red-900/20 border border-red-500/20 rounded-xl p-6 text-red-400">
-          {error}
-        </div>
-      </div>
-    );
-  }
-
   // Calculate total access keys safely
   const totalAccessKeys = users?.reduce((acc, user) => acc + (user?.accessKeys?.length || 0), 0) || 0;
   const totalEntities = (users?.length || 0) + (roles?.length || 0);
@@ -345,12 +351,43 @@ export default function Permissions() {
       : <ArrowDown className="w-4 h-4 ml-1" />;
   };
 
+  // Helper function to render credential status
+  const CredentialStatus = () => {
+    if (!credentials) {
+      return (
+        <div className="mb-6 bg-yellow-900/20 border border-yellow-500/20 rounded-xl p-4">
+          <div className="flex items-center gap-2 text-yellow-400">
+            <AlertTriangle className="w-5 h-5" />
+            <span>AWS credentials not found. Please add your credentials in the Settings page.</span>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="flex flex-col h-screen bg-[#181C23]">
       {/* Header Section - Fixed height */}
       <div className="flex-none p-8 pt-6">
         <h1 className="text-4xl font-bold text-white leading-tight">Permissions Analysis</h1>
         <p className="text-gray-400 text-base mt-1">Detailed view of IAM users, roles, and access patterns</p>
+        {error && (
+          <div className="mt-4 bg-red-900/20 border border-red-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertTriangle className="w-5 h-5" />
+              <span>{error}</span>
+            </div>
+          </div>
+        )}
+        {!credentials && !error && (
+          <div className="mt-4 bg-yellow-900/20 border border-yellow-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-yellow-400">
+              <AlertTriangle className="w-5 h-5" />
+              <span>AWS credentials not found. Please add your credentials in the Settings page.</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Stats Cards - Fixed height */}
@@ -360,26 +397,32 @@ export default function Permissions() {
             <div className="mb-4">
               <span className="text-lg font-semibold text-white">Total Entities</span>
             </div>
-            <div className="text-2xl font-extrabold text-white mb-1">{totalEntities} IAM entities</div>
+            <div className="text-2xl font-extrabold text-white mb-1">
+              {credentials ? `${totalEntities} IAM entities` : 'N/A'}
+            </div>
           </div>
           <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
             <div className="mb-4">
               <span className="text-lg font-semibold text-white">IAM Users</span>
             </div>
-            <div className="text-2xl font-extrabold text-white mb-1">{users?.length || 0} users</div>
+            <div className="text-2xl font-extrabold text-white mb-1">
+              {credentials ? `${users?.length || 0} users` : 'N/A'}
+            </div>
           </div>
           <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
             <div className="mb-4">
               <span className="text-lg font-semibold text-white">IAM Roles</span>
             </div>
-            <div className="text-2xl font-extrabold text-white mb-1">{roles?.length || 0} roles</div>
+            <div className="text-2xl font-extrabold text-white mb-1">
+              {credentials ? `${roles?.length || 0} roles` : 'N/A'}
+            </div>
           </div>
           <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
             <div className="mb-4">
               <span className="text-lg font-semibold text-white">API Keys</span>
             </div>
             <div className="text-2xl font-extrabold text-white mb-1">
-              {totalAccessKeys} active API keys
+              {credentials ? `${totalAccessKeys} active API keys` : 'N/A'}
             </div>
           </div>
         </div>
@@ -444,91 +487,117 @@ export default function Permissions() {
           </div>
           
           <div className="flex-1 relative bg-[#181C23] rounded-xl border border-[#23272f] overflow-hidden">
-            {error ? (
-              <div className="bg-red-900/20 border border-red-500/20 rounded-xl p-6 text-red-400">
-                {error}
-              </div>
-            ) : (
-              <div className="absolute inset-0 overflow-auto">
-                <table className="w-full text-lg text-left">
-                  <thead className="sticky top-0 z-10 text-lg text-blue-300 uppercase bg-[#1a1f28]">
+            <div className="absolute inset-0 overflow-auto">
+              <table className="w-full text-lg text-left">
+                <thead className="sticky top-0 z-10 text-lg text-blue-300 uppercase bg-[#1a1f28]">
+                  <tr>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                      onClick={() => handleSort('type')}
+                    >
+                      <div className="flex items-center">
+                        Type
+                        <SortIndicator field="type" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                      onClick={() => handleSort('provider')}
+                    >
+                      <div className="flex items-center">
+                        Provider
+                        <SortIndicator field="provider" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                      onClick={() => handleSort('name')}
+                    >
+                      <div className="flex items-center">
+                        Name
+                        <SortIndicator field="name" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                      onClick={() => handleSort('created')}
+                    >
+                      <div className="flex items-center">
+                        Created
+                        <SortIndicator field="created" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                      onClick={() => handleSort('lastUsed')}
+                    >
+                      <div className="flex items-center">
+                        Last Used
+                        <SortIndicator field="lastUsed" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                      onClick={() => handleSort('mfa')}
+                    >
+                      <div className="flex items-center">
+                        MFA
+                        <SortIndicator field="mfa" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                      onClick={() => handleSort('risk')}
+                    >
+                      <div className="flex items-center">
+                        Risk Level
+                        <SortIndicator field="risk" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                      onClick={() => handleSort('policies')}
+                    >
+                      <div className="flex items-center">
+                        Policies
+                        <SortIndicator field="policies" />
+                      </div>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#23272f]">
+                  {!credentials && !error ? (
                     <tr>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('type')}
-                      >
-                        <div className="flex items-center">
-                          Type
-                          <SortIndicator field="type" />
+                      <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                        <div className="flex flex-col items-center gap-2">
+                          <AlertTriangle className="w-8 h-8 text-yellow-500" />
+                          <span>Connect your AWS account to view IAM entities</span>
+                          <button 
+                            onClick={() => window.location.href = '/providers'}
+                            className="mt-2 px-4 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 rounded-lg transition-colors"
+                          >
+                            Go to Settings
+                          </button>
                         </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('provider')}
-                      >
-                        <div className="flex items-center">
-                          Provider
-                          <SortIndicator field="provider" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('name')}
-                      >
-                        <div className="flex items-center">
-                          Name
-                          <SortIndicator field="name" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('created')}
-                      >
-                        <div className="flex items-center">
-                          Created
-                          <SortIndicator field="created" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('lastUsed')}
-                      >
-                        <div className="flex items-center">
-                          Last Used
-                          <SortIndicator field="lastUsed" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('mfa')}
-                      >
-                        <div className="flex items-center">
-                          MFA
-                          <SortIndicator field="mfa" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('risk')}
-                      >
-                        <div className="flex items-center">
-                          Risk Level
-                          <SortIndicator field="risk" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('policies')}
-                      >
-                        <div className="flex items-center">
-                          Policies
-                          <SortIndicator field="policies" />
-                        </div>
-                      </th>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#23272f]">
-                    {allEntities.map((entity, index) => {
+                  ) : error ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                        <div className="flex flex-col items-center gap-2">
+                          <AlertTriangle className="w-8 h-8 text-red-500" />
+                          <span>{error}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : allEntities.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                        No IAM entities found
+                      </td>
+                    </tr>
+                  ) : (
+                    allEntities.map((entity, index) => {
                       const riskInfo = getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low');
                       const RiskIcon = riskInfo.icon;
                       const providerInfo = getProviderInfo(entity.provider);
@@ -817,11 +886,11 @@ export default function Permissions() {
                           </tr>
                         );
                       }
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </div>

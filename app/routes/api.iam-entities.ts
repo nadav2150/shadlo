@@ -13,7 +13,10 @@ export async function loader({ request }: { request: Request }) {
       return json({ 
         status: "error",
         message: "AWS credentials not found. Please add your credentials in the Settings page.",
-        redirectTo: "/settings"
+        redirectTo: "/settings",
+        credentials: null,
+        users: [],
+        roles: []
       }, { status: 401 });
     }
 
@@ -55,14 +58,21 @@ export async function loader({ request }: { request: Request }) {
 
     return json({ 
       users: usersWithRiskAssessment,
-      roles: rolesWithRiskAssessment
+      roles: rolesWithRiskAssessment,
+      credentials: {
+        accessKeyId: credentials.accessKeyId,
+        region: credentials.region
+      }
     });
   } catch (error) {
     console.error('Error fetching IAM entities:', error);
     return json({ 
       status: "error",
       message: "Failed to fetch IAM entities. Please check your AWS credentials in Settings.",
-      redirectTo: "/settings"
+      redirectTo: "/settings",
+      credentials: null,
+      users: [],
+      roles: []
     }, { status: 500 });
   }
 } 
