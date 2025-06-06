@@ -3,7 +3,7 @@ import { useLoaderData } from "@remix-run/react";
 import { json } from "@remix-run/node";
 import { IAMClient } from "@aws-sdk/client-iam";
 import { Stats } from "~/components/Stats";
-import { Alerts } from "~/components/Alerts";
+import { Timeline } from "~/components/Timeline";
 import { Button } from "~/components/ui/button";
 import { Cloud, Shield, Scan, FileText, Eye, Plus, CheckCircle, AlertCircle, Settings } from "lucide-react";
 import { getAwsCredentials } from "~/utils/session.server";
@@ -18,6 +18,65 @@ export const meta: MetaFunction = () => {
   ];
 };
 
+// Generate mock score history data for the last 30 days
+function generateScoreHistory(users: UserDetails[], roles: RoleDetails[]) {
+  const today = new Date();
+  const history = [];
+  
+  // Define risk level thresholds based on risk-assessment.ts
+  const RISK_LEVELS = {
+    LOW: { max: 4, color: 'green' },
+    MEDIUM: { max: 9, color: 'yellow' },
+    HIGH: { max: 14, color: 'orange' },
+    CRITICAL: { max: 15, color: 'red' }
+  };
+
+  // Generate a more varied score history that shows all risk levels
+  for (let i = 30; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    
+    // Create a pattern that cycles through different risk levels
+    // Week 1: Low risk (0-4)
+    // Week 2: Medium risk (5-9)
+    // Week 3: High risk (10-14)
+    // Week 4: Critical risk (15)
+    const week = Math.floor(i / 7);
+    let baseScore;
+    
+    switch (week) {
+      case 0: // Week 1 - Low risk
+        baseScore = Math.floor(Math.random() * 5); // 0-4
+        break;
+      case 1: // Week 2 - Medium risk
+        baseScore = 5 + Math.floor(Math.random() * 5); // 5-9
+        break;
+      case 2: // Week 3 - High risk
+        baseScore = 10 + Math.floor(Math.random() * 5); // 10-14
+        break;
+      case 3: // Week 4 - Critical risk
+        baseScore = 15;
+        break;
+      default:
+        baseScore = Math.floor(Math.random() * 15);
+    }
+    
+    // Add some daily variation (±1 point) to make it more realistic
+    const variation = Math.random() * 2 - 1;
+    const score = Math.max(0, Math.min(15, Math.round(baseScore + variation)));
+    
+    history.push({
+      date: date.toISOString(),
+      score: score,
+      riskLevel: score <= RISK_LEVELS.LOW.max ? 'low' :
+                score <= RISK_LEVELS.MEDIUM.max ? 'medium' :
+                score <= RISK_LEVELS.HIGH.max ? 'high' : 'critical'
+    });
+  }
+
+  return history;
+}
+
 export const loader: LoaderFunction = async ({ request }) => {
   const credentials = await getAwsCredentials(request);
   
@@ -26,6 +85,7 @@ export const loader: LoaderFunction = async ({ request }) => {
       credentials: null,
       users: [],
       roles: [],
+      scoreHistory: [],
       error: null
     });
   }
@@ -45,10 +105,14 @@ export const loader: LoaderFunction = async ({ request }) => {
       getIAMRoles(iamClient)
     ]);
 
+    // Generate score history
+    const scoreHistory = generateScoreHistory(users, roles);
+
     return json({ 
       credentials,
       users,
       roles,
+      scoreHistory,
       error: null
     });
   } catch (error) {
@@ -57,13 +121,14 @@ export const loader: LoaderFunction = async ({ request }) => {
       credentials,
       users: [],
       roles: [],
+      scoreHistory: [],
       error: "Failed to fetch IAM data. Please check your AWS credentials."
     });
   }
 };
 
 const Index = () => {
-  const { credentials, users, roles, error } = useLoaderData<typeof loader>();
+  const { credentials, users, roles, scoreHistory, error } = useLoaderData<typeof loader>();
 
   // Calculate shadow permissions for all entities and deduplicate them
   const shadowPermissions: ShadowPermissionRisk[] = credentials ? [
@@ -124,12 +189,12 @@ const Index = () => {
         hasCredentials={!!credentials}
       />
 
-      {/* Main Content Grid: Alerts and Service Connections */}
+      {/* Main Content Grid: Timeline and Service Connections */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Alerts Section - Takes up 2 columns on xl screens */}
+        {/* Timeline Section - Takes up 2 columns on xl screens */}
         <div className="xl:col-span-2">
-          <Alerts 
-            shadowPermissions={shadowPermissions} 
+          <Timeline 
+            scoreHistory={scoreHistory}
             hasCredentials={!!credentials}
           />
         </div>
@@ -160,55 +225,6 @@ const Index = () => {
             <Settings className="w-4 h-4" />
             Manage Providers
           </Button>
-        </div>
-      </div>
-
-      {/* Quick Actions Grid */}
-      <div className="bg-white/5 border border-gray-800 rounded-xl p-6">
-        <h2 className="text-xl font-semibold text-white mb-6 flex items-center gap-2">
-          <Shield className="w-6 h-6 text-secondary" />
-          Quick Security Actions
-        </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <button 
-            className={`group p-6 bg-gradient-to-br from-red-500/10 to-red-600/10 hover:from-red-500/20 hover:to-red-600/20 border border-red-500/20 rounded-lg transition-all duration-200 text-left ${!credentials ? 'opacity-50 cursor-not-allowed' : ''}`}
-            disabled={!credentials}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <Scan className="w-6 h-6 text-red-400 group-hover:text-red-300" />
-              <h3 className="font-semibold text-white">Shadow Scan</h3>
-            </div>
-            <p className="text-sm text-gray-400 group-hover:text-gray-300">
-              Discover hidden permissions and access patterns
-            </p>
-          </button>
-
-          <button 
-            className={`group p-6 bg-gradient-to-br from-blue-500/10 to-blue-600/10 hover:from-blue-500/20 hover:to-blue-600/20 border border-blue-500/20 rounded-lg transition-all duration-200 text-left ${!credentials ? 'opacity-50 cursor-not-allowed' : ''}`}
-            disabled={!credentials}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <Eye className="w-6 h-6 text-blue-400 group-hover:text-blue-300" />
-              <h3 className="font-semibold text-white">Access Review</h3>
-            </div>
-            <p className="text-sm text-gray-400 group-hover:text-gray-300">
-              Review and audit user access policies
-            </p>
-          </button>
-
-          <button 
-            className={`group p-6 bg-gradient-to-br from-green-500/10 to-green-600/10 hover:from-green-500/20 hover:to-green-600/20 border border-green-500/20 rounded-lg transition-all duration-200 text-left ${!credentials ? 'opacity-50 cursor-not-allowed' : ''}`}
-            disabled={!credentials}
-          >
-            <div className="flex items-center gap-3 mb-3">
-              <FileText className="w-6 h-6 text-green-400 group-hover:text-green-300" />
-              <h3 className="font-semibold text-white">Security Report</h3>
-            </div>
-            <p className="text-sm text-gray-400 group-hover:text-gray-300">
-              Generate comprehensive security analysis
-            </p>
-          </button>
         </div>
       </div>
     </div>
