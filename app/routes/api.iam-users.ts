@@ -2,17 +2,27 @@ import { json } from "@remix-run/node";
 import { IAMClient } from "@aws-sdk/client-iam";
 import { getIAMUsers } from "~/lib/iam/aws-operations";
 import { calculateRiskScore } from "~/lib/iam/risk-assessment";
-import type { UserDetails } from "~/lib/iam/types";
-import { env } from "~/utils/env.server";
+import { getAwsCredentials } from "~/utils/session.server";
 
-export async function loader() {
+export async function loader({ request }: { request: Request }) {
   try {
-    // Initialize AWS IAM client with credentials
+    // Get AWS credentials from session
+    const credentials = await getAwsCredentials(request);
+    
+    if (!credentials) {
+      return json({ 
+        status: "error",
+        message: "AWS credentials not found. Please add your credentials in the Settings page.",
+        redirectTo: "/settings"
+      }, { status: 401 });
+    }
+
+    // Initialize AWS IAM client with session credentials
     const iamClient = new IAMClient({
-      region: env.AWS_REGION,
+      region: credentials.region,
       credentials: {
-        accessKeyId: env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
       },
     });
 
@@ -30,6 +40,10 @@ export async function loader() {
     return json({ users: usersWithRiskAssessment });
   } catch (error) {
     console.error('Error fetching IAM users:', error);
-    return json({ users: [], error: 'Failed to fetch IAM users' }, { status: 500 });
+    return json({ 
+      status: "error",
+      message: "Failed to fetch IAM users. Please check your AWS credentials in Settings.",
+      redirectTo: "/settings"
+    }, { status: 500 });
   }
 } 

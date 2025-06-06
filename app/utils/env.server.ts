@@ -1,39 +1,9 @@
-import { config } from "dotenv";
+/**
+ * Server-side environment variables
+ * This file should only be imported in server-side code (files with .server.ts extension)
+ */
 
-// Load environment variables
-config();
-
-// Define the shape of our environment variables
-interface Env {
-  AWS_ACCESS_KEY_ID: string;
-  AWS_SECRET_ACCESS_KEY: string;
-  AWS_REGION: string;
-}
-
-// Validate that all required environment variables are present
-function validateEnv(): Env {
-  const requiredEnvVars = [
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_REGION",
-  ] as const;
-
-  const missingEnvVars = requiredEnvVars.filter(
-    (envVar) => !process.env[envVar]
-  );
-
-  if (missingEnvVars.length > 0) {
-    throw new Error(
-      `Missing required environment variables: ${missingEnvVars.join(", ")}`
-    );
-  }
-
-  return {
-    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID!,
-    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY!,
-    AWS_REGION: process.env.AWS_REGION!,
-  };
-}
-
-// Export validated environment variables
-export const env = validateEnv(); 
+// For now, we only need NODE_ENV which is handled by Remix/Vite
+export const env = {
+  NODE_ENV: 'development', // This will be overridden by the build process
+}; 

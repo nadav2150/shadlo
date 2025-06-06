@@ -1,8 +1,9 @@
-import { Shield } from "lucide-react";
+import { Shield, Cloud } from "lucide-react";
 import { NavLink } from "@remix-run/react";
 
 const navItems = [
-  { name: "Dashboard", to: "/" },
+  { name: "Dashboard", to: "/", icon: Shield },
+  { name: "Providers", to: "/providers", icon: Cloud },
   { name: "Permissions", to: "/permissions" },
   { name: "Users", to: "/users" },
   { name: "Settings", to: "/settings" },
@@ -25,6 +26,7 @@ export function AppSidebar() {
                 }
                 end
               >
+                {item.icon && <item.icon className="w-5 h-5" />}
                 {item.name}
               </NavLink>
             </li>

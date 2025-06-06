@@ -1,16 +1,27 @@
 import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
 import { IAMClient, GetUserCommand } from "@aws-sdk/client-iam";
-import { env } from "~/utils/env.server";
+import { getAwsCredentials } from "~/utils/session.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
   try {
-    // Initialize the IAM client with validated environment variables
+    // Get AWS credentials from session
+    const credentials = await getAwsCredentials(request);
+    
+    if (!credentials) {
+      return json({
+        status: "error",
+        message: "AWS credentials not found. Please add your credentials in the Settings page.",
+        redirectTo: "/settings"
+      }, { status: 401 });
+    }
+
+    // Initialize the IAM client with session credentials
     const iamClient = new IAMClient({
-      region: env.AWS_REGION,
+      region: credentials.region,
       credentials: {
-        accessKeyId: env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
       },
     });
 
@@ -24,7 +35,7 @@ export const loader: LoaderFunction = async ({ request }) => {
       details: {
         user: response.User?.UserName,
         arn: response.User?.Arn,
-        region: env.AWS_REGION
+        region: credentials.region
       }
     });
   } catch (error: any) {
@@ -34,31 +45,31 @@ export const loader: LoaderFunction = async ({ request }) => {
     if (error.name === "InvalidClientTokenId") {
       return json({
         status: "error",
-        message: "Invalid AWS Access Key ID",
-        error: error.message
+        message: "Invalid AWS Access Key ID. Please update your credentials in Settings.",
+        redirectTo: "/settings"
       }, { status: 401 });
     }
     
     if (error.name === "SignatureDoesNotMatch") {
       return json({
         status: "error",
-        message: "Invalid AWS Secret Access Key",
-        error: error.message
+        message: "Invalid AWS Secret Access Key. Please update your credentials in Settings.",
+        redirectTo: "/settings"
       }, { status: 401 });
     }
 
     if (error.name === "UnrecognizedClientException") {
       return json({
         status: "error",
-        message: "Invalid AWS Region",
-        error: error.message
+        message: "Invalid AWS Region. Please update your region in Settings.",
+        redirectTo: "/settings"
       }, { status: 400 });
     }
 
     return json({
       status: "error",
-      message: "Failed to verify AWS credentials",
-      error: error.message
+      message: "Failed to verify AWS credentials. Please check your credentials in Settings.",
+      redirectTo: "/settings"
     }, { status: 500 });
   }
 }; 

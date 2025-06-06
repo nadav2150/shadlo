@@ -49,19 +49,28 @@ export const loader: LoaderFunction = async ({ request }) => {
     const url = new URL(request.url);
     const baseUrl = `${url.protocol}//${url.host}`;
     
-    // Make the request to the IAM users API using the full URL
-    const response = await fetch(`${baseUrl}/api/iam-users`);
+    // Get the cookie header from the original request
+    const cookieHeader = request.headers.get("Cookie");
+    console.log("Debug - Permissions route cookie:", cookieHeader);
+    
+    // Make the request to the IAM users API using the full URL and forwarding cookies
+    const response = await fetch(`${baseUrl}/api/iam-users`, {
+      headers: {
+        Cookie: cookieHeader || "",
+      },
+    });
+    
     const data = await response.json();
     
     if (!response.ok) {
-      throw new Error(data.error || "Failed to fetch IAM users");
+      throw new Error(data.message || data.error || "Failed to fetch IAM users");
     }
     
     return json<LoaderData>({ users: data.users });
   } catch (error) {
     console.error("Error in loader:", error);
     return json<LoaderData>(
-      { users: [], error: "Failed to fetch IAM users" },
+      { users: [], error: error instanceof Error ? error.message : "Failed to fetch IAM users" },
       { status: 500 }
     );
   }
