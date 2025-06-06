@@ -1,8 +1,11 @@
-import type { MetaFunction } from "@remix-run/node";
+import type { MetaFunction, LoaderFunction } from "@remix-run/node";
+import { useLoaderData } from "@remix-run/react";
+import { json } from "@remix-run/node";
 import { Stats } from "~/components/Stats";
 import { Alerts } from "~/components/Alerts";
 import { Button } from "~/components/ui/button";
-import { Cloud, Shield, Scan, FileText, Eye, Plus, CheckCircle, AlertCircle } from "lucide-react";
+import { Cloud, Shield, Scan, FileText, Eye, Plus, CheckCircle, AlertCircle, Settings } from "lucide-react";
+import { getAwsCredentials } from "~/utils/session.server";
 
 export const meta: MetaFunction = () => {
   return [
@@ -11,16 +14,23 @@ export const meta: MetaFunction = () => {
   ];
 };
 
+export const loader: LoaderFunction = async ({ request }) => {
+  const credentials = await getAwsCredentials(request);
+  return json({ credentials });
+};
+
 const Index = () => {
+  const { credentials } = useLoaderData<typeof loader>();
+
   const handleConnect = (service: string) => {
     console.log(`Connecting to ${service}...`);
     // TODO: Implement connection logic
   };
 
   const connectedServices = {
-    AWS: true,
+    AWS: !!credentials?.accessKeyId,
     Azure: false,
-    Okta: true
+    Okta: false
   };
 
   return (
@@ -51,36 +61,22 @@ const Index = () => {
           
           <div className="space-y-4 mb-8">
             {Object.entries(connectedServices).map(([service, isConnected]) => (
-              <div key={service} className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-gray-700">
+              <div key={service} className="flex items-center p-4 bg-white/5 rounded-lg border border-gray-700">
                 <div className="flex items-center gap-3">
                   <div className={`w-3 h-3 rounded-full ${isConnected ? 'bg-green-500' : 'bg-gray-500'}`} />
                   <span className="font-medium text-white">{service}</span>
                   {isConnected && <CheckCircle className="w-4 h-4 text-green-500" />}
                 </div>
-                <Button
-                  onClick={() => handleConnect(service)}
-                  size="default"
-                  className={`$${
-                    isConnected 
-                      ? 'bg-green-600 hover:bg-green-700' 
-                      : service === 'AWS' 
-                        ? 'bg-orange-600 hover:bg-orange-700'
-                        : service === 'Azure'
-                          ? 'bg-blue-600 hover:bg-blue-700'
-                          : 'bg-blue-500 hover:bg-blue-600'
-                  } text-white`}
-                >
-                  {isConnected ? 'Manage' : 'Connect'}
-                </Button>
               </div>
             ))}
           </div>
 
           <Button 
             className="w-full bg-secondary hover:bg-secondary/90 text-white flex items-center gap-2"
+            onClick={() => window.location.href = '/providers'}
           >
-            <Plus className="w-4 h-4" />
-            Add New Service
+            <Settings className="w-4 h-4" />
+            Manage Providers
           </Button>
         </div>
       </div>
