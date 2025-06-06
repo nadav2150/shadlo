@@ -179,7 +179,6 @@ export function Stats({ users, roles, shadowPermissions, hasCredentials }: Stats
           <div className="text-xs text-gray-500 mt-2 text-center">
             {hasCredentials ? (
               <>
-                <div>Risk Score: {totalRiskScore}</div>
                 <div>Security Score: {overallScore}%</div>
               </>
             ) : (

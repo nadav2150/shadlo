@@ -673,10 +673,7 @@ export default function Permissions() {
                                 {/* Risk Factors Tooltip */}
                                 <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
                                   <div className="text-xs space-y-3">
-                                    <div className="font-semibold text-white">Risk Assessment</div>
-                                    <div className="text-gray-400">
-                                      Overall Score: {user?.riskAssessment?.score || 0}
-                                    </div>
+                                    
                                     <div className="space-y-1">
                                       <div className="font-semibold text-white">Risk Factors</div>
                                       <ul className="list-disc list-inside space-y-1">
@@ -808,10 +805,7 @@ export default function Permissions() {
                                 {/* Risk Factors Tooltip */}
                                 <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
                                   <div className="text-xs space-y-3">
-                                    <div className="font-semibold text-white">Risk Assessment</div>
-                                    <div className="text-gray-400">
-                                      Overall Score: {role?.riskAssessment?.score || 0}
-                                    </div>
+                                   
                                     <div className="space-y-1">
                                       <div className="font-semibold text-white">Risk Factors</div>
                                       <ul className="list-disc list-inside space-y-1">

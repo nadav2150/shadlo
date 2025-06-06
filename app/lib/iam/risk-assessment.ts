@@ -154,9 +154,30 @@ function generateRiskFactors(
   }
 
   // Identity context factors
-  if ('type' in entity && entity.type === 'role') {
+  if ('hasMFA' in entity) {  // Check for hasMFA property to identify users
+    const user = entity as UserDetails;
     if (identityScore === 5) {
-      const role = entity as RoleDetails;
+      if (!user.accessKeys || user.accessKeys.length === 0) {
+        factors.push('User has no access keys');
+      } else if (user.accessKeys.every(key => key.status === 'Inactive')) {
+        factors.push('All access keys are inactive');
+      }
+      if ('userName' in entity && !user.hasMFA) {
+        factors.push('MFA is not enabled');
+      }
+    } else if (identityScore === 3) {
+      if (!user.lastUsed) {
+        factors.push('User has never been used');
+      } else {
+        factors.push('User is inactive (no activity in 90+ days)');
+      }
+      if (user.accessKeys && user.accessKeys.every(key => key.status === 'Inactive')) {
+        factors.push('All access keys are inactive');
+      }
+    }
+  } else {  // This must be a role
+    const role = entity as RoleDetails;
+    if (identityScore === 5) {
       if (!role.trustPolicy) {
         factors.push('Role has no trust policy');
       } else {
@@ -175,27 +196,6 @@ function generateRiskFactors(
       }
     } else if (identityScore === 3) {
       factors.push('Role is inactive (no activity in 90+ days)');
-    }
-  } else {
-    const user = entity as UserDetails;
-    if (identityScore === 5) {
-      if (!user.accessKeys || user.accessKeys.length === 0) {
-        factors.push('User has no access keys');
-      } else if (user.accessKeys.every(key => key.status === 'Inactive')) {
-        factors.push('All access keys are inactive');
-      }
-      if (!user.hasMFA) {
-        factors.push('MFA is not enabled');
-      }
-    } else if (identityScore === 3) {
-      if (!user.lastUsed) {
-        factors.push('User has never been used');
-      } else {
-        factors.push('User is inactive (no activity in 90+ days)');
-      }
-      if (user.accessKeys && user.accessKeys.every(key => key.status === 'Inactive')) {
-        factors.push('All access keys are inactive');
-      }
     }
   }
 
