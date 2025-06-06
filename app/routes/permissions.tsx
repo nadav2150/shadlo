@@ -916,30 +916,16 @@ export default function Permissions() {
                                       <div className="p-2 rounded-lg bg-blue-500/10">
                                         <AlertCircle className="w-4 h-4 text-blue-400" />
                                       </div>
-                                      <h3 className="text-lg font-semibold text-white">Score Calculation</h3>
+                                      <h3 className="text-lg font-semibold text-white">Risk Score</h3>
                                     </div>
                                     <div className="space-y-4">
-                                      <div className="grid grid-cols-3 gap-4">
-                                        <div className="p-3 rounded-lg bg-blue-500/10">
-                                          <div className="text-sm font-medium text-blue-400 mb-1">Activity Score</div>
-                                          <div className="text-xs text-gray-400">30% of total score</div>
-                                        </div>
-                                        <div className="p-3 rounded-lg bg-purple-500/10">
-                                          <div className="text-sm font-medium text-purple-400 mb-1">Permission Score</div>
-                                          <div className="text-xs text-gray-400">40% of total score</div>
-                                        </div>
-                                        <div className="p-3 rounded-lg bg-green-500/10">
-                                          <div className="text-sm font-medium text-green-400 mb-1">Identity Context</div>
-                                          <div className="text-xs text-gray-400">30% of total score</div>
-                                        </div>
-                                      </div>
-                                      <div className="mt-4 p-3 rounded-lg bg-white/5 border border-white/10">
+                                      <div className="p-3 rounded-lg bg-white/5 border border-white/10">
                                         {(() => {
                                           const score = entity.riskAssessment?.score ?? 0;
                                           return (
                                             <>
                                               <div className="flex justify-between items-center">
-                                                <span className="text-sm text-gray-400">Risk Score</span>
+                                                <span className="text-sm text-gray-400">Current Score</span>
                                                 <div className="flex items-center gap-2">
                                                   <span className={`text-lg font-bold ${
                                                     score <= 4 ? 'text-green-400' :
