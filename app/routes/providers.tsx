@@ -254,7 +254,13 @@ export default function ProvidersPage() {
         <ProviderCard
           name="AWS"
           description="Connect your AWS account to manage IAM permissions and access."
-          icon={<Shield className="w-6 h-6 text-blue-400" />}
+          icon={
+            <img 
+              src="/amazon-aws.svg" 
+              alt="AWS"
+              className="w-12 invert brightness-0"
+            />
+          }
           isConnected={!!credentials?.accessKeyId}
           onConnect={() => handleConnect("aws")}
           onManage={() => handleManage("aws")}
@@ -267,14 +273,26 @@ export default function ProvidersPage() {
         <ProviderCard
           name="Azure"
           description="Connect your Azure account to manage role assignments and access."
-          icon={<Shield className="w-6 h-6 text-blue-400" />}
+          icon={
+            <img 
+              src="/microsoft-azure.svg" 
+              alt="Azure"
+              className="w-12 invert brightness-0"
+            />
+          }
           isConnected={false}
           onConnect={() => handleConnect("azure")}
         />
         <ProviderCard
           name="Okta"
           description="Connect your Okta organization to manage user access and groups."
-          icon={<Key className="w-6 h-6 text-blue-400" />}
+          icon={
+            <img 
+              src="/okta.svg" 
+              alt="Okta"
+              className="w-12 invert brightness-0"
+            />
+          }
           isConnected={false}
           onConnect={() => handleConnect("okta")}
         />

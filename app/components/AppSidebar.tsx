@@ -2,8 +2,8 @@ import { Shield, Cloud } from "lucide-react";
 import { NavLink } from "@remix-run/react";
 
 const navItems = [
-  { name: "Dashboard", to: "/", icon: Shield },
-  { name: "Providers", to: "/providers", icon: Cloud },
+  { name: "Dashboard", to: "/" },
+  { name: "Providers", to: "/providers" },
   { name: "Permissions", to: "/permissions" },
   { name: "Users", to: "/users" },
   { name: "Settings", to: "/settings" },
@@ -22,11 +22,10 @@ export function AppSidebar() {
               <NavLink
                 to={item.to}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-4 py-2 rounded-lg transition-colors font-medium hover:bg-gray-800 ${isActive ? "bg-gray-800" : ""}`
+                  `flex items-center px-4 py-2 rounded-lg transition-colors font-medium hover:bg-gray-800 ${isActive ? "bg-gray-800" : ""}`
                 }
                 end
               >
-                {item.icon && <item.icon className="w-5 h-5" />}
                 {item.name}
               </NavLink>
             </li>

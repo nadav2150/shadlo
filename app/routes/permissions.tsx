@@ -25,6 +25,7 @@ interface IAMUser {
   policies: Policy[];
   hasMFA: boolean;
   accessKeys?: AccessKey[];
+  provider: 'aws' | 'azure' | 'gcp';
   riskAssessment?: {
     riskLevel: 'low' | 'medium' | 'high';
     score: number;
@@ -158,6 +159,33 @@ function getShadowPermissionInfo(type: string) {
   }
 }
 
+// Add this helper function after the other helper functions
+function getProviderInfo(provider: 'aws' | 'azure' | 'gcp') {
+  switch (provider) {
+    case 'aws':
+      return {
+        icon: '/amazon-aws.svg',
+        label: 'AWS',
+        color: 'text-orange-500',
+        bgColor: 'bg-orange-500/10'
+      };
+    case 'azure':
+      return {
+        icon: '/microsoft-azure.svg',
+        label: 'Azure',
+        color: 'text-blue-500',
+        bgColor: 'bg-blue-500/10'
+      };
+    case 'gcp':
+      return {
+        icon: '/google-cloud.svg',
+        label: 'GCP',
+        color: 'text-green-500',
+        bgColor: 'bg-green-500/10'
+      };
+  }
+}
+
 export default function Permissions() {
   const { users = [], error } = useLoaderData<LoaderData>();
 
@@ -191,15 +219,13 @@ export default function Permissions() {
       <div className="flex-none px-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-6">
           <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
-            <div className="flex items-center gap-3 mb-4">
-              <Shield className="w-6 h-6 text-blue-400" />
+            <div className="mb-4">
               <span className="text-lg font-semibold text-white">Admin Access</span>
             </div>
             <div className="text-2xl font-extrabold text-white mb-1">{users?.length || 0} IAM users</div>
           </div>
           <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
-            <div className="flex items-center gap-3 mb-4">
-              <Key className="w-6 h-6 text-cyan-400" />
+            <div className="mb-4">
               <span className="text-lg font-semibold text-white">API Keys</span>
             </div>
             <div className="text-2xl font-extrabold text-white mb-1">
@@ -207,8 +233,7 @@ export default function Permissions() {
             </div>
           </div>
           <div className="bg-[#181C23] border border-[#23272f] rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
-            <div className="flex items-center gap-3 mb-4">
-              <AlertTriangle className="w-6 h-6 text-yellow-400" />
+            <div className="mb-4">
               <span className="text-lg font-semibold text-white">Risk Level</span>
             </div>
             <div className="text-2xl font-extrabold text-white mb-1">
@@ -235,6 +260,7 @@ export default function Permissions() {
                 <table className="w-full text-lg text-left">
                   <thead className="sticky top-0 z-10 text-lg text-blue-300 uppercase bg-[#1a1f28]">
                     <tr>
+                      <th className="px-6 py-4 font-semibold">Provider</th>
                       <th className="px-6 py-4 font-semibold">Username</th>
                       <th className="px-6 py-4 font-semibold">Created</th>
                       <th className="px-6 py-4 font-semibold">Last Used</th>
@@ -253,7 +279,16 @@ export default function Permissions() {
                           key={user?.userName || index}
                           className="hover:bg-[#282d37] transition-colors duration-200"
                         >
-                          <td className="px-6 py-5 font-medium text-white whitespace-nowrap rounded-l-xl">
+                          <td className="px-6 py-5 whitespace-nowrap rounded-l-xl">
+                            <div className="flex items-center justify-center">
+                              <img 
+                                src="/amazon-aws.svg" 
+                                alt="AWS"
+                                className="w-8 h-8 invert brightness-0"
+                              />
+                            </div>
+                          </td>
+                          <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <User className="w-5 h-5 text-blue-400" />
                               <a 
@@ -292,16 +327,16 @@ export default function Permissions() {
                             </div>
                           </td>
                           <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="group relative">
-                              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor}`}>
+                            <div className="group relative inline-block">
+                              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor} cursor-help`}>
                                 <RiskIcon className={`w-4 h-4 ${riskInfo.color}`} />
                                 <span className={`text-sm font-medium ${riskInfo.color}`}>
                                   {riskInfo.label}
                                 </span>
                               </div>
                               
-                              {/* Simplified Risk Factors Tooltip */}
-                              <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                              {/* Risk Factors Tooltip */}
+                              <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
                                 <div className="text-xs space-y-3">
                                   <div className="font-semibold text-white">Risk Assessment</div>
                                   <div className="text-gray-400">
