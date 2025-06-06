@@ -1,7 +1,8 @@
-import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon } from "lucide-react";
+import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter } from "lucide-react";
 import { useLoaderData } from "@remix-run/react";
 import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
+import { useState, useMemo } from "react";
 
 interface Policy {
   name: string;
@@ -223,6 +224,37 @@ function getProviderInfo(provider: 'aws' | 'azure' | 'gcp') {
 
 export default function Permissions() {
   const { users = [], roles = [], error } = useLoaderData<LoaderData>();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
+  const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
+
+  // Combine users and roles into a single array for filtering
+  const allEntities = useMemo(() => {
+    const combined = [
+      ...users.map(user => ({ ...user, type: 'user' as const })),
+      ...roles.map(role => ({ ...role, type: 'role' as const }))
+    ];
+
+    return combined.filter(entity => {
+      // Search filter
+      const searchLower = searchQuery.toLowerCase();
+      const entityName = entity.type === 'user' 
+        ? (entity as IAMUser).userName 
+        : (entity as IAMRole).roleName;
+      
+      const matchesSearch = searchQuery === "" || 
+        (entityName?.toLowerCase() || '').includes(searchLower);
+
+      // Type filter
+      const matchesType = typeFilter === "all" || entity.type === typeFilter;
+
+      // Risk filter
+      const matchesRisk = riskFilter === "all" || 
+        entity.riskAssessment?.riskLevel === riskFilter;
+
+      return matchesSearch && matchesType && matchesRisk;
+    });
+  }, [users, roles, searchQuery, typeFilter, riskFilter]);
 
   // Add early return for error state
   if (error) {
@@ -289,6 +321,57 @@ export default function Permissions() {
           <div className="flex-none mb-4">
             <h2 className="text-2xl font-bold text-white">IAM Entities</h2>
           </div>
+
+          {/* Search and Filter Controls */}
+          <div className="flex-none mb-4 flex flex-wrap gap-4">
+            {/* Search Bar */}
+            <div className="relative flex-1 min-w-[200px]">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-5 w-5 text-gray-400" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name..."
+                className="w-full pl-10 pr-4 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Type Filter */}
+            <div className="relative">
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
+                className="appearance-none pl-4 pr-10 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Types</option>
+                <option value="user">Users</option>
+                <option value="role">Roles</option>
+              </select>
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <Filter className="h-5 w-5 text-gray-400" />
+              </div>
+            </div>
+
+            {/* Risk Level Filter */}
+            <div className="relative">
+              <select
+                value={riskFilter}
+                onChange={(e) => setRiskFilter(e.target.value as typeof riskFilter)}
+                className="appearance-none pl-4 pr-10 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Risk Levels</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <Filter className="h-5 w-5 text-gray-400" />
+              </div>
+            </div>
+          </div>
           
           {error ? (
             <div className="bg-red-900/20 border border-red-500/20 rounded-xl p-6 text-red-400">
@@ -311,299 +394,295 @@ export default function Permissions() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#23272f]">
-                    {/* Render Users */}
-                    {(users || []).map((user, index) => {
-                      const riskInfo = getRiskLevelInfo(user?.riskAssessment?.riskLevel || 'low');
+                    {allEntities.map((entity, index) => {
+                      const riskInfo = getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low');
                       const RiskIcon = riskInfo.icon;
-                      const providerInfo = getProviderInfo(user.provider);
+                      const providerInfo = getProviderInfo(entity.provider);
                       
-                      return (
-                        <tr 
-                          key={`user-${user?.userName || index}`}
-                          className="hover:bg-[#282d37] transition-colors duration-200"
-                        >
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <User className="w-5 h-5 text-blue-400" />
-                              <span className="text-blue-400">User</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="flex items-center justify-center">
-                              <img 
-                                src={providerInfo.icon}
-                                alt={providerInfo.label}
-                                className="w-8 h-8 invert brightness-0"
-                              />
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <a 
-                                href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/users/${user?.userName}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors"
-                              >
-                                {user?.userName || 'Unknown'}
-                                <ExternalLink className="w-4 h-4" />
-                              </a>
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                            {user?.createDate ? new Date(user.createDate).toLocaleDateString() : 'N/A'}
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                            {user?.lastUsed 
-                              ? new Date(user.lastUsed).toLocaleDateString()
-                              : "Never"
-                            }
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              {user?.hasMFA ? (
-                                <span className="flex items-center gap-1 text-green-400">
-                                  <Lock className="w-4 h-4" />
-                                  <span className="text-sm">Enabled</span>
-                                </span>
-                              ) : (
-                                <span className="flex items-center gap-1 text-red-400">
-                                  <AlertTriangle className="w-4 h-4" />
-                                  <span className="text-sm">Disabled</span>
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="group relative inline-block">
-                              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor} cursor-help`}>
-                                <RiskIcon className={`w-4 h-4 ${riskInfo.color}`} />
-                                <span className={`text-sm font-medium ${riskInfo.color}`}>
-                                  {riskInfo.label}
-                                </span>
+                      if (entity.type === 'user') {
+                        const user = entity as IAMUser;
+                        return (
+                          <tr 
+                            key={`user-${user?.userName || index}`}
+                            className="hover:bg-[#282d37] transition-colors duration-200"
+                          >
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <User className="w-5 h-5 text-blue-400" />
+                                <span className="text-blue-400">User</span>
                               </div>
-                              
-                              {/* Risk Factors Tooltip */}
-                              <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                                <div className="text-xs space-y-3">
-                                  <div className="font-semibold text-white">Risk Assessment</div>
-                                  <div className="text-gray-400">
-                                    Overall Score: {user?.riskAssessment?.score || 0}
-                                  </div>
-                                  <div className="space-y-1">
-                                    <div className="font-semibold text-white">Risk Factors</div>
-                                    <ul className="list-disc list-inside space-y-1">
-                                      {user?.riskAssessment?.factors.map((factor, i) => (
-                                        <li key={i} className="text-gray-300">{factor}</li>
-                                      ))}
-                                    </ul>
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="flex items-center justify-center">
+                                <img 
+                                  src={providerInfo.icon}
+                                  alt={providerInfo.label}
+                                  className="w-8 h-8 invert brightness-0"
+                                />
+                              </div>
+                            </td>
+                            <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <a 
+                                  href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/users/${user?.userName}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors"
+                                >
+                                  {user?.userName || 'Unknown'}
+                                  <ExternalLink className="w-4 h-4" />
+                                </a>
+                              </div>
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap text-gray-300">
+                              {user?.createDate ? new Date(user.createDate).toLocaleDateString() : 'N/A'}
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap text-gray-300">
+                              {user?.lastUsed 
+                                ? new Date(user.lastUsed).toLocaleDateString()
+                                : "Never"
+                              }
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                {user?.hasMFA ? (
+                                  <span className="flex items-center gap-1 text-green-400">
+                                    <Lock className="w-4 h-4" />
+                                    <span className="text-sm">Enabled</span>
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-red-400">
+                                    <AlertTriangle className="w-4 h-4" />
+                                    <span className="text-sm">Disabled</span>
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="group relative inline-block">
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor} cursor-help`}>
+                                  <RiskIcon className={`w-4 h-4 ${riskInfo.color}`} />
+                                  <span className={`text-sm font-medium ${riskInfo.color}`}>
+                                    {riskInfo.label}
+                                  </span>
+                                </div>
+                                
+                                {/* Risk Factors Tooltip */}
+                                <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                                  <div className="text-xs space-y-3">
+                                    <div className="font-semibold text-white">Risk Assessment</div>
+                                    <div className="text-gray-400">
+                                      Overall Score: {user?.riskAssessment?.score || 0}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="font-semibold text-white">Risk Factors</div>
+                                      <ul className="list-disc list-inside space-y-1">
+                                        {user?.riskAssessment?.factors.map((factor, i) => (
+                                          <li key={i} className="text-gray-300">{factor}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="space-y-2">
-                              {/* Inline Policies */}
-                              {(user?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
-                                <div>
-                                  <div className="text-sm text-gray-400 mb-1">Inline Policies:</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {(user?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
-                                      <span 
-                                        key={policy.name}
-                                        className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs"
-                                      >
-                                        {policy.name}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Attached Policies */}
-                              {(user?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
-                                <div>
-                                  <div className="text-sm text-gray-400 mb-1">Attached Policies:</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {(user?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
-                                      <div 
-                                        key={policy.name}
-                                        className="group relative"
-                                      >
-                                        <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs cursor-help">
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="space-y-2">
+                                {/* Inline Policies */}
+                                {(user?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
+                                  <div>
+                                    <div className="text-sm text-gray-400 mb-1">Inline Policies:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {(user?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
+                                        <span 
+                                          key={policy.name}
+                                          className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs"
+                                        >
                                           {policy.name}
                                         </span>
-                                        {/* Policy Tooltip */}
-                                        <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                          <div className="text-xs space-y-1">
-                                            <div className="font-semibold text-white">{policy.name}</div>
-                                            {policy.description && (
-                                              <div className="text-gray-400">{policy.description}</div>
-                                            )}
-                                            <div className="text-gray-500">
-                                              Created: {policy.createDate ? new Date(policy.createDate).toLocaleDateString() : 'Unknown'}
-                                            </div>
-                                            <div className="text-gray-500">
-                                              Updated: {policy.updateDate ? new Date(policy.updateDate).toLocaleDateString() : 'Unknown'}
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Attached Policies */}
+                                {(user?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
+                                  <div>
+                                    <div className="text-sm text-gray-400 mb-1">Attached Policies:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {(user?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
+                                        <div 
+                                          key={policy.name}
+                                          className="group relative"
+                                        >
+                                          <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs cursor-help">
+                                            {policy.name}
+                                          </span>
+                                          {/* Policy Tooltip */}
+                                          <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                            <div className="text-xs space-y-1">
+                                              <div className="font-semibold text-white">{policy.name}</div>
+                                              {policy.description && (
+                                                <div className="text-gray-400">{policy.description}</div>
+                                              )}
+                                              <div className="text-gray-500">
+                                                Created: {policy.createDate ? new Date(policy.createDate).toLocaleDateString() : 'Unknown'}
+                                              </div>
+                                              <div className="text-gray-500">
+                                                Updated: {policy.updateDate ? new Date(policy.updateDate).toLocaleDateString() : 'Unknown'}
+                                              </div>
                                             </div>
                                           </div>
                                         </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {(!user?.policies?.filter(p => p.type === 'inline')?.length && !user?.policies?.filter(p => p.type === 'managed')?.length) && (
-                                <span className="text-gray-500">No policies</span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-
-                    {/* Render Roles */}
-                    {(roles || []).map((role, index) => {
-                      const riskInfo = getRiskLevelInfo(role?.riskAssessment?.riskLevel || 'low');
-                      const RiskIcon = riskInfo.icon;
-                      const providerInfo = getProviderInfo(role.provider);
-                      
-                      return (
-                        <tr 
-                          key={`role-${role?.roleName || index}`}
-                          className="hover:bg-[#282d37] transition-colors duration-200"
-                        >
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <Shield className="w-5 h-5 text-purple-400" />
-                              <span className="text-purple-400">Role</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="flex items-center justify-center">
-                              <img 
-                                src={providerInfo.icon}
-                                alt={providerInfo.label}
-                                className="w-8 h-8 invert brightness-0"
-                              />
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <a 
-                                href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/roles/${role?.roleName}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-purple-400 hover:text-purple-300 transition-colors"
-                              >
-                                {role?.roleName || 'Unknown'}
-                                <ExternalLink className="w-4 h-4" />
-                              </a>
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                            {role?.createDate ? new Date(role.createDate).toLocaleDateString() : 'N/A'}
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                            {role?.lastUsed 
-                              ? new Date(role.lastUsed).toLocaleDateString()
-                              : "Never"
-                            }
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <span className="text-gray-500">N/A</span>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="group relative inline-block">
-                              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor} cursor-help`}>
-                                <RiskIcon className={`w-4 h-4 ${riskInfo.color}`} />
-                                <span className={`text-sm font-medium ${riskInfo.color}`}>
-                                  {riskInfo.label}
-                                </span>
-                              </div>
-                              
-                              {/* Risk Factors Tooltip */}
-                              <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                                <div className="text-xs space-y-3">
-                                  <div className="font-semibold text-white">Risk Assessment</div>
-                                  <div className="text-gray-400">
-                                    Overall Score: {role?.riskAssessment?.score || 0}
-                                  </div>
-                                  <div className="space-y-1">
-                                    <div className="font-semibold text-white">Risk Factors</div>
-                                    <ul className="list-disc list-inside space-y-1">
-                                      {role?.riskAssessment?.factors.map((factor, i) => (
-                                        <li key={i} className="text-gray-300">{factor}</li>
                                       ))}
-                                    </ul>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {(!user?.policies?.filter(p => p.type === 'inline')?.length && !user?.policies?.filter(p => p.type === 'managed')?.length) && (
+                                  <span className="text-gray-500">No policies</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      } else {
+                        const role = entity as IAMRole;
+                        return (
+                          <tr 
+                            key={`role-${role?.roleName || index}`}
+                            className="hover:bg-[#282d37] transition-colors duration-200"
+                          >
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <Shield className="w-5 h-5 text-purple-400" />
+                                <span className="text-purple-400">Role</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="flex items-center justify-center">
+                                <img 
+                                  src={providerInfo.icon}
+                                  alt={providerInfo.label}
+                                  className="w-8 h-8 invert brightness-0"
+                                />
+                              </div>
+                            </td>
+                            <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <a 
+                                  href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/roles/${role?.roleName}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 text-purple-400 hover:text-purple-300 transition-colors"
+                                >
+                                  {role?.roleName || 'Unknown'}
+                                  <ExternalLink className="w-4 h-4" />
+                                </a>
+                              </div>
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap text-gray-300">
+                              {role?.createDate ? new Date(role.createDate).toLocaleDateString() : 'N/A'}
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap text-gray-300">
+                              {role?.lastUsed 
+                                ? new Date(role.lastUsed).toLocaleDateString()
+                                : "Never"
+                              }
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <span className="text-gray-500">N/A</span>
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="group relative inline-block">
+                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor} cursor-help`}>
+                                  <RiskIcon className={`w-4 h-4 ${riskInfo.color}`} />
+                                  <span className={`text-sm font-medium ${riskInfo.color}`}>
+                                    {riskInfo.label}
+                                  </span>
+                                </div>
+                                
+                                {/* Risk Factors Tooltip */}
+                                <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                                  <div className="text-xs space-y-3">
+                                    <div className="font-semibold text-white">Risk Assessment</div>
+                                    <div className="text-gray-400">
+                                      Overall Score: {role?.riskAssessment?.score || 0}
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="font-semibold text-white">Risk Factors</div>
+                                      <ul className="list-disc list-inside space-y-1">
+                                        {role?.riskAssessment?.factors.map((factor, i) => (
+                                          <li key={i} className="text-gray-300">{factor}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-5 whitespace-nowrap">
-                            <div className="space-y-2">
-                              {/* Inline Policies */}
-                              {(role?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
-                                <div>
-                                  <div className="text-sm text-gray-400 mb-1">Inline Policies:</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {(role?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
-                                      <span 
-                                        key={policy.name}
-                                        className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs"
-                                      >
-                                        {policy.name}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Attached Policies */}
-                              {(role?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
-                                <div>
-                                  <div className="text-sm text-gray-400 mb-1">Attached Policies:</div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {(role?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
-                                      <div 
-                                        key={policy.name}
-                                        className="group relative"
-                                      >
-                                        <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs cursor-help">
+                            </td>
+                            <td className="px-6 py-5 whitespace-nowrap">
+                              <div className="space-y-2">
+                                {/* Inline Policies */}
+                                {(role?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
+                                  <div>
+                                    <div className="text-sm text-gray-400 mb-1">Inline Policies:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {(role?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
+                                        <span 
+                                          key={policy.name}
+                                          className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs"
+                                        >
                                           {policy.name}
                                         </span>
-                                        {/* Policy Tooltip */}
-                                        <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                          <div className="text-xs space-y-1">
-                                            <div className="font-semibold text-white">{policy.name}</div>
-                                            {policy.description && (
-                                              <div className="text-gray-400">{policy.description}</div>
-                                            )}
-                                            <div className="text-gray-500">
-                                              Created: {policy.createDate ? new Date(policy.createDate).toLocaleDateString() : 'Unknown'}
-                                            </div>
-                                            <div className="text-gray-500">
-                                              Updated: {policy.updateDate ? new Date(policy.updateDate).toLocaleDateString() : 'Unknown'}
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Attached Policies */}
+                                {(role?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
+                                  <div>
+                                    <div className="text-sm text-gray-400 mb-1">Attached Policies:</div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {(role?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
+                                        <div 
+                                          key={policy.name}
+                                          className="group relative"
+                                        >
+                                          <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs cursor-help">
+                                            {policy.name}
+                                          </span>
+                                          {/* Policy Tooltip */}
+                                          <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                            <div className="text-xs space-y-1">
+                                              <div className="font-semibold text-white">{policy.name}</div>
+                                              {policy.description && (
+                                                <div className="text-gray-400">{policy.description}</div>
+                                              )}
+                                              <div className="text-gray-500">
+                                                Created: {policy.createDate ? new Date(policy.createDate).toLocaleDateString() : 'Unknown'}
+                                              </div>
+                                              <div className="text-gray-500">
+                                                Updated: {policy.updateDate ? new Date(policy.updateDate).toLocaleDateString() : 'Unknown'}
+                                              </div>
                                             </div>
                                           </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                )}
 
-                              {(!role?.policies?.filter(p => p.type === 'inline')?.length && 
-                                !role?.policies?.filter(p => p.type === 'managed')?.length) && (
-                                <span className="text-gray-500">No policies</span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
+                                {(!role?.policies?.filter(p => p.type === 'inline')?.length && 
+                                  !role?.policies?.filter(p => p.type === 'managed')?.length) && (
+                                  <span className="text-gray-500">No policies</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
                     })}
                   </tbody>
                 </table>
