@@ -1,4 +1,5 @@
-import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown } from "lucide-react";
+import React from "react";
+import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight } from "lucide-react";
 import { useLoaderData } from "@remix-run/react";
 import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
@@ -245,6 +246,7 @@ export default function Permissions() {
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   // Debug log to check what data we have
   console.log("Debug - Component Data:", {
@@ -364,6 +366,17 @@ export default function Permissions() {
       );
     }
     return null;
+  };
+
+  // Helper function to toggle row expansion
+  const toggleRow = (entityId: string) => {
+    const newExpandedRows = new Set(expandedRows);
+    if (newExpandedRows.has(entityId)) {
+      newExpandedRows.delete(entityId);
+    } else {
+      newExpandedRows.add(entityId);
+    }
+    setExpandedRows(newExpandedRows);
   };
 
   return (
@@ -563,6 +576,13 @@ export default function Permissions() {
                         <SortIndicator field="policies" />
                       </div>
                     </th>
+                    <th 
+                      className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                    >
+                      <div className="flex items-center">
+                        Actions
+                      </div>
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#23272f]">
@@ -601,14 +621,13 @@ export default function Permissions() {
                       const riskInfo = getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low');
                       const RiskIcon = riskInfo.icon;
                       const providerInfo = getProviderInfo(entity.provider);
-                      
-                      if (entity.type === 'user') {
-                        const user = entity as IAMUser;
-                        return (
-                          <tr 
-                            key={`user-${user?.userName || index}`}
-                            className="hover:bg-[#282d37] transition-colors duration-200"
-                          >
+                      const ProviderIcon = providerInfo.icon;
+                      const entityId = entity.type === 'user' ? (entity as IAMUser).userName : (entity as IAMRole).roleName;
+                      const isExpanded = expandedRows.has(entityId);
+
+                      return (
+                        <React.Fragment key={entityId}>
+                          <tr className="border-b border-[#23272f] hover:bg-[#1a1f28]/50 transition-colors">
                             <td className="px-6 py-5 whitespace-nowrap">
                               <div className="flex items-center gap-2">
                                 <User className="w-5 h-5 text-blue-400" />
@@ -627,37 +646,41 @@ export default function Permissions() {
                             <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
                               <div className="flex items-center gap-2">
                                 <a 
-                                  href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/users/${user?.userName}`}
+                                  href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/${entity.type === 'user' ? 'users' : 'roles'}/${entityId}`}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors"
+                                  className={`flex items-center gap-1 ${
+                                    entity.type === 'user' ? 'text-blue-400 hover:text-blue-300' : 'text-purple-400 hover:text-purple-300'
+                                  } transition-colors`}
                                 >
-                                  {user?.userName || 'Unknown'}
+                                  {entityId}
                                   <ExternalLink className="w-4 h-4" />
                                 </a>
                               </div>
                             </td>
                             <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                              {user?.createDate ? new Date(user.createDate).toLocaleDateString() : 'N/A'}
+                              {entity?.createDate ? new Date(entity.createDate).toLocaleDateString() : 'N/A'}
                             </td>
                             <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                              {user?.lastUsed 
-                                ? new Date(user.lastUsed).toLocaleDateString()
+                              {entity?.lastUsed 
+                                ? new Date(entity.lastUsed).toLocaleDateString()
                                 : "Never"
                               }
                             </td>
                             <td className="px-6 py-5 whitespace-nowrap">
                               <div className="flex items-center gap-2">
-                                {user?.hasMFA ? (
+                                {entity.type === 'user' && (entity as IAMUser).hasMFA ? (
                                   <span className="flex items-center gap-1 text-green-400">
                                     <Lock className="w-4 h-4" />
-                                    <span className="text-sm">Enabled</span>
+                                    Enabled
                                   </span>
-                                ) : (
+                                ) : entity.type === 'user' ? (
                                   <span className="flex items-center gap-1 text-red-400">
                                     <AlertTriangle className="w-4 h-4" />
-                                    <span className="text-sm">Disabled</span>
+                                    Disabled
                                   </span>
+                                ) : (
+                                  <span className="text-gray-500">N/A</span>
                                 )}
                               </div>
                             </td>
@@ -677,7 +700,7 @@ export default function Permissions() {
                                     <div className="space-y-1">
                                       <div className="font-semibold text-white">Risk Factors</div>
                                       <ul className="list-disc list-inside space-y-1">
-                                        {user?.riskAssessment?.factors.map((factor, i) => (
+                                        {entity?.riskAssessment?.factors.map((factor, i) => (
                                           <li key={i} className="text-gray-300">{factor}</li>
                                         ))}
                                       </ul>
@@ -689,11 +712,11 @@ export default function Permissions() {
                             <td className="px-6 py-5 whitespace-nowrap">
                               <div className="space-y-2">
                                 {/* Inline Policies */}
-                                {(user?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
+                                {(entity?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
                                   <div>
                                     <div className="text-sm text-gray-400 mb-1">Inline Policies:</div>
                                     <div className="flex flex-wrap gap-1">
-                                      {(user?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
+                                      {(entity?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
                                         <span 
                                           key={policy.name}
                                           className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs"
@@ -706,11 +729,11 @@ export default function Permissions() {
                                 )}
 
                                 {/* Attached Policies */}
-                                {(user?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
+                                {(entity?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
                                   <div>
                                     <div className="text-sm text-gray-400 mb-1">Attached Policies:</div>
                                     <div className="flex flex-wrap gap-1">
-                                      {(user?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
+                                      {(entity?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
                                         <div 
                                           key={policy.name}
                                           className="group relative"
@@ -739,147 +762,136 @@ export default function Permissions() {
                                   </div>
                                 )}
 
-                                {(!user?.policies?.filter(p => p.type === 'inline')?.length && !user?.policies?.filter(p => p.type === 'managed')?.length) && (
+                                {(!entity?.policies?.filter(p => p.type === 'inline')?.length && !entity?.policies?.filter(p => p.type === 'managed')?.length) && (
                                   <span className="text-gray-500">No policies</span>
                                 )}
                               </div>
                             </td>
-                          </tr>
-                        );
-                      } else {
-                        const role = entity as IAMRole;
-                        return (
-                          <tr 
-                            key={`role-${role?.roleName || index}`}
-                            className="hover:bg-[#282d37] transition-colors duration-200"
-                          >
-                            <td className="px-6 py-5 whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <Shield className="w-5 h-5 text-purple-400" />
-                                <span className="text-purple-400">Role</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-5 whitespace-nowrap">
-                              <div className="flex items-center justify-center">
-                                <img 
-                                  src={providerInfo.icon}
-                                  alt={providerInfo.label}
-                                  className="w-8 h-8 invert brightness-0"
-                                />
-                              </div>
-                            </td>
-                            <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
-                              <div className="flex items-center gap-2">
-                                <a 
-                                  href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/roles/${role?.roleName}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex items-center gap-1 text-purple-400 hover:text-purple-300 transition-colors"
-                                >
-                                  {role?.roleName || 'Unknown'}
-                                  <ExternalLink className="w-4 h-4" />
-                                </a>
-                              </div>
-                            </td>
-                            <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                              {role?.createDate ? new Date(role.createDate).toLocaleDateString() : 'N/A'}
-                            </td>
-                            <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                              {role?.lastUsed 
-                                ? new Date(role.lastUsed).toLocaleDateString()
-                                : "Never"
-                              }
-                            </td>
-                            <td className="px-6 py-5 whitespace-nowrap">
-                              <span className="text-gray-500">N/A</span>
-                            </td>
-                            <td className="px-6 py-5 whitespace-nowrap">
-                              <div className="group relative inline-block">
-                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor} cursor-help`}>
-                                  <RiskIcon className={`w-4 h-4 ${riskInfo.color}`} />
-                                  <span className={`text-sm font-medium ${riskInfo.color}`}>
-                                    {riskInfo.label}
-                                  </span>
-                                </div>
-                                
-                                {/* Risk Factors Tooltip */}
-                                <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                                  <div className="text-xs space-y-3">
-                                   
-                                    <div className="space-y-1">
-                                      <div className="font-semibold text-white">Risk Factors</div>
-                                      <ul className="list-disc list-inside space-y-1">
-                                        {role?.riskAssessment?.factors.map((factor, i) => (
-                                          <li key={i} className="text-gray-300">{factor}</li>
-                                        ))}
-                                      </ul>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-5 whitespace-nowrap">
-                              <div className="space-y-2">
-                                {/* Inline Policies */}
-                                {(role?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
-                                  <div>
-                                    <div className="text-sm text-gray-400 mb-1">Inline Policies:</div>
-                                    <div className="flex flex-wrap gap-1">
-                                      {(role?.policies?.filter(p => p.type === 'inline') || []).map(policy => (
-                                        <span 
-                                          key={policy.name}
-                                          className="bg-purple-900/50 text-purple-300 px-2 py-1 rounded text-xs"
-                                        >
-                                          {policy.name}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
+                            <td className="px-6 py-4">
+                              <button
+                                onClick={() => toggleRow(entityId)}
+                                className="text-gray-400 hover:text-white transition-colors"
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="w-5 h-5" />
+                                ) : (
+                                  <ChevronRight className="w-5 h-5" />
                                 )}
-
-                                {/* Attached Policies */}
-                                {(role?.policies?.filter(p => p.type === 'managed') || []).length > 0 && (
-                                  <div>
-                                    <div className="text-sm text-gray-400 mb-1">Attached Policies:</div>
-                                    <div className="flex flex-wrap gap-1">
-                                      {(role?.policies?.filter(p => p.type === 'managed') || []).map(policy => (
-                                        <div 
-                                          key={policy.name}
-                                          className="group relative"
-                                        >
-                                          <span className="bg-blue-900/50 text-blue-300 px-2 py-1 rounded text-xs cursor-help">
-                                            {policy.name}
+                              </button>
+                            </td>
+                          </tr>
+                          
+                          {/* Expanded Score Details Row */}
+                          {isExpanded && (
+                            <tr className="border-b border-[#23272f] bg-[#1a1f28]/30">
+                              <td colSpan={8} className="px-6 py-4">
+                                <div className="space-y-4">
+                                  {/* Score Breakdown */}
+                                  <div className="grid grid-cols-3 gap-4">
+                                    {/* Activity Score */}
+                                    <div className="p-4 rounded-lg bg-white/5 border border-white/10">
+                                      <h4 className="text-sm font-semibold text-white mb-2">Activity Score</h4>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-gray-400 text-sm">Last Activity</span>
+                                          <span className="text-white text-sm">
+                                            {entity.lastUsed ? new Date(entity.lastUsed).toLocaleDateString() : 'Never'}
                                           </span>
-                                          {/* Policy Tooltip */}
-                                          <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                            <div className="text-xs space-y-1">
-                                              <div className="font-semibold text-white">{policy.name}</div>
-                                              {policy.description && (
-                                                <div className="text-gray-400">{policy.description}</div>
-                                              )}
-                                              <div className="text-gray-500">
-                                                Created: {policy.createDate ? new Date(policy.createDate).toLocaleDateString() : 'Unknown'}
-                                              </div>
-                                              <div className="text-gray-500">
-                                                Updated: {policy.updateDate ? new Date(policy.updateDate).toLocaleDateString() : 'Unknown'}
-                                              </div>
-                                            </div>
-                                          </div>
                                         </div>
-                                      ))}
+                                        {entity.type === 'user' && (
+                                          <div className="flex justify-between items-center">
+                                            <span className="text-gray-400 text-sm">Access Keys</span>
+                                            <span className="text-white text-sm">
+                                              {(entity as IAMUser).accessKeys?.length || 0} active
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {/* Permission Score */}
+                                    <div className="p-4 rounded-lg bg-white/5 border border-white/10">
+                                      <h4 className="text-sm font-semibold text-white mb-2">Permission Score</h4>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-gray-400 text-sm">Total Policies</span>
+                                          <span className="text-white text-sm">{entity.policies.length}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-gray-400 text-sm">High Risk Policies</span>
+                                          <span className="text-white text-sm">
+                                            {entity.riskAssessment?.shadowPermissions.filter(p => p.severity === 'high').length || 0}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Identity Context Score */}
+                                    <div className="p-4 rounded-lg bg-white/5 border border-white/10">
+                                      <h4 className="text-sm font-semibold text-white mb-2">Identity Context</h4>
+                                      <div className="space-y-2">
+                                        {entity.type === 'user' && (
+                                          <div className="flex justify-between items-center">
+                                            <span className="text-gray-400 text-sm">MFA Status</span>
+                                            <span className={`text-sm ${(entity as IAMUser).hasMFA ? 'text-green-400' : 'text-red-400'}`}>
+                                              {(entity as IAMUser).hasMFA ? 'Enabled' : 'Disabled'}
+                                            </span>
+                                          </div>
+                                        )}
+                                        <div className="flex justify-between items-center">
+                                          <span className="text-gray-400 text-sm">Account Age</span>
+                                          <span className="text-white text-sm">
+                                            {Math.floor((Date.now() - new Date(entity.createDate).getTime()) / (1000 * 60 * 60 * 24 * 30))} months
+                                          </span>
+                                        </div>
+                                      </div>
                                     </div>
                                   </div>
-                                )}
 
-                                {(!role?.policies?.filter(p => p.type === 'inline')?.length && 
-                                  !role?.policies?.filter(p => p.type === 'managed')?.length) && (
-                                  <span className="text-gray-500">No policies</span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      }
+                                  {/* Shadow Permissions */}
+                                  {entity.riskAssessment?.shadowPermissions && entity.riskAssessment.shadowPermissions.length > 0 && (
+                                    <div className="mt-4">
+                                      <h4 className="text-sm font-semibold text-white mb-3">Shadow Permissions</h4>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        {entity.riskAssessment.shadowPermissions.map((permission, i) => (
+                                          <div key={i} className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                            <div className="flex items-center gap-2 mb-2">
+                                              <span className={`text-xs font-medium px-2 py-1 rounded ${
+                                                permission.severity === 'high' ? 'bg-red-500/20 text-red-400' :
+                                                permission.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                'bg-green-500/20 text-green-400'
+                                              }`}>
+                                                {permission.severity.toUpperCase()}
+                                              </span>
+                                              <span className="text-xs font-medium text-white">{permission.type}</span>
+                                            </div>
+                                            <p className="text-gray-300 text-xs">{permission.description}</p>
+                                            <p className="text-gray-400 text-xs mt-1">{permission.details}</p>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Score Calculation */}
+                                  <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
+                                    <h4 className="text-sm font-semibold text-white mb-2">Score Calculation</h4>
+                                    <div className="space-y-2 text-sm text-gray-300">
+                                      <p>The risk score is calculated based on three main factors:</p>
+                                      <ul className="list-disc list-inside space-y-1 ml-2">
+                                        <li>Activity Score (30%): Based on last activity and access key usage</li>
+                                        <li>Permission Score (40%): Based on policy complexity and high-risk permissions</li>
+                                        <li>Identity Context (30%): Based on MFA status and account age</li>
+                                      </ul>
+                                      <p className="mt-2">Final Score: {entity.riskAssessment?.score || 0}/100</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
                     })
                   )}
                 </tbody>

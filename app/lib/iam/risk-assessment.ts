@@ -138,7 +138,7 @@ function generateRiskFactors(
   // Last used factors
   if (lastUsedScore > 0) {
     if (lastUsedScore === 5) {
-      factors.push('No activity in over 180 days');
+      factors.push('No activity');
     } else if (lastUsedScore === 3) {
       factors.push('No activity in 91-180 days');
     } else if (lastUsedScore === 2) {
@@ -158,7 +158,7 @@ function generateRiskFactors(
     const user = entity as UserDetails;
     if (identityScore === 5) {
       if (!user.accessKeys || user.accessKeys.length === 0) {
-        factors.push('User has no access keys');
+        factors.push('Orphaned entity');
       } else if (user.accessKeys.every(key => key.status === 'Inactive')) {
         factors.push('All access keys are inactive');
       }
