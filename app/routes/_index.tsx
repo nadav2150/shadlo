@@ -26,7 +26,7 @@ export const loader: LoaderFunction = async ({ request }) => {
       credentials: null,
       users: [],
       roles: [],
-      error: "AWS credentials not found. Please add your credentials in the Settings page."
+      error: null
     });
   }
 
@@ -66,7 +66,7 @@ const Index = () => {
   const { credentials, users, roles, error } = useLoaderData<typeof loader>();
 
   // Calculate shadow permissions for all entities and deduplicate them
-  const shadowPermissions: ShadowPermissionRisk[] = [
+  const shadowPermissions: ShadowPermissionRisk[] = credentials ? [
     ...users.map((user: UserDetails) => calculateRiskScore(user).shadowPermissions),
     ...roles.map((role: RoleDetails) => calculateRiskScore(role).shadowPermissions)
   ]
@@ -77,7 +77,7 @@ const Index = () => {
         p.type === permission.type && 
         p.details.includes(permission.details.split('"')[1]) // Extract policy name from details
       )
-    );
+    ) : [];
 
   const handleConnect = (service: string) => {
     console.log(`Connecting to ${service}...`);
@@ -90,16 +90,6 @@ const Index = () => {
     Okta: false
   };
 
-  if (error) {
-    return (
-      <div className="p-8">
-        <div className="bg-red-900/20 border border-red-500/20 rounded-xl p-6 text-red-400">
-          {error}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8">
       {/* Header Section */}
@@ -108,16 +98,40 @@ const Index = () => {
         <p className="text-gray-300 text-lg">
           Monitor and manage your cloud security posture across all platforms
         </p>
+        {!credentials && (
+          <div className="mt-4 bg-yellow-900/20 border border-yellow-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-yellow-400">
+              <AlertCircle className="w-5 h-5" />
+              <span>AWS credentials not found. Please add your credentials in the Settings page.</span>
+            </div>
+          </div>
+        )}
+        {error && (
+          <div className="mt-4 bg-red-900/20 border border-red-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertCircle className="w-5 h-5" />
+              <span>{error}</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Stats Section */}
-      <Stats users={users} roles={roles} shadowPermissions={shadowPermissions} />
+      <Stats 
+        users={users} 
+        roles={roles} 
+        shadowPermissions={shadowPermissions} 
+        hasCredentials={!!credentials}
+      />
 
       {/* Main Content Grid: Alerts and Service Connections */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         {/* Alerts Section - Takes up 2 columns on xl screens */}
         <div className="xl:col-span-2">
-          <Alerts shadowPermissions={shadowPermissions} />
+          <Alerts 
+            shadowPermissions={shadowPermissions} 
+            hasCredentials={!!credentials}
+          />
         </div>
         
         {/* Service Connections Section - Takes up 1 column on xl screens */}
@@ -157,7 +171,10 @@ const Index = () => {
         </h2>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <button className="group p-6 bg-gradient-to-br from-red-500/10 to-red-600/10 hover:from-red-500/20 hover:to-red-600/20 border border-red-500/20 rounded-lg transition-all duration-200 text-left">
+          <button 
+            className={`group p-6 bg-gradient-to-br from-red-500/10 to-red-600/10 hover:from-red-500/20 hover:to-red-600/20 border border-red-500/20 rounded-lg transition-all duration-200 text-left ${!credentials ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!credentials}
+          >
             <div className="flex items-center gap-3 mb-3">
               <Scan className="w-6 h-6 text-red-400 group-hover:text-red-300" />
               <h3 className="font-semibold text-white">Shadow Scan</h3>
@@ -167,7 +184,10 @@ const Index = () => {
             </p>
           </button>
 
-          <button className="group p-6 bg-gradient-to-br from-blue-500/10 to-blue-600/10 hover:from-blue-500/20 hover:to-blue-600/20 border border-blue-500/20 rounded-lg transition-all duration-200 text-left">
+          <button 
+            className={`group p-6 bg-gradient-to-br from-blue-500/10 to-blue-600/10 hover:from-blue-500/20 hover:to-blue-600/20 border border-blue-500/20 rounded-lg transition-all duration-200 text-left ${!credentials ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!credentials}
+          >
             <div className="flex items-center gap-3 mb-3">
               <Eye className="w-6 h-6 text-blue-400 group-hover:text-blue-300" />
               <h3 className="font-semibold text-white">Access Review</h3>
@@ -177,7 +197,10 @@ const Index = () => {
             </p>
           </button>
 
-          <button className="group p-6 bg-gradient-to-br from-green-500/10 to-green-600/10 hover:from-green-500/20 hover:to-green-600/20 border border-green-500/20 rounded-lg transition-all duration-200 text-left">
+          <button 
+            className={`group p-6 bg-gradient-to-br from-green-500/10 to-green-600/10 hover:from-green-500/20 hover:to-green-600/20 border border-green-500/20 rounded-lg transition-all duration-200 text-left ${!credentials ? 'opacity-50 cursor-not-allowed' : ''}`}
+            disabled={!credentials}
+          >
             <div className="flex items-center gap-3 mb-3">
               <FileText className="w-6 h-6 text-green-400 group-hover:text-green-300" />
               <h3 className="font-semibold text-white">Security Report</h3>
