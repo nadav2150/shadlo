@@ -248,14 +248,6 @@ export default function Permissions() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  // Debug log to check what data we have
-  console.log("Debug - Component Data:", {
-    hasCredentials: !!credentials,
-    userCount: users.length,
-    roleCount: roles.length,
-    error
-  });
-
   // Handle sort click
   const handleSort = (field: SortField) => {
     if (sortField === field) {
