@@ -111,7 +111,7 @@ const Index = () => {
       </div>
 
       {/* Stats Section */}
-      <Stats users={users} roles={roles} />
+      <Stats users={users} roles={roles} shadowPermissions={shadowPermissions} />
 
       {/* Main Content Grid: Alerts and Service Connections */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
