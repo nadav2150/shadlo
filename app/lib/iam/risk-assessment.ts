@@ -1,176 +1,265 @@
-import { UserDetails, RiskAssessment, ShadowPermissionRisk } from './types';
-import { RISK_FACTORS, HIGH_RISK_PATTERNS, MEDIUM_RISK_PATTERNS, SHADOW_PERMISSION_PATTERNS } from './constants';
+import type { UserDetails, RoleDetails, Policy } from './types';
+import { HIGH_RISK_PATTERNS, MEDIUM_RISK_PATTERNS } from './constants';
 
-export function calculateRiskScore(user: UserDetails): RiskAssessment {
-  const factors: string[] = [];
-  let score = 0;
-  const shadowPermissions: ShadowPermissionRisk[] = [];
+interface RiskScore {
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  score: number;
+  factors: string[];
+  shadowPermissions: {
+    type: string;
+    description: string;
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    details: string;
+  }[];
+}
 
-  // Check for unused account (shadow access) - This is now a critical risk
-  const lastUsed = user.lastUsed ? new Date(user.lastUsed) : null;
+function calculateLastUsedScore(lastUsed?: string): number {
+  if (!lastUsed) return 5; // No last used date means high risk
+  
+  const lastUsedDate = new Date(lastUsed);
   const now = new Date();
-  const accountAge = (now.getTime() - new Date(user.createDate).getTime()) / (1000 * 60 * 60 * 24 * 30);
-  const monthsSinceLastUse = lastUsed ? 
-    (now.getTime() - lastUsed.getTime()) / (1000 * 60 * 60 * 24 * 30) : 
-    accountAge; // If never used, use the account age
+  const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (!lastUsed || (monthsSinceLastUse && monthsSinceLastUse > 3)) {
-    score += RISK_FACTORS.UNUSED_ACCOUNT * 2; // Double the score for unused accounts
-    const message = !lastUsed ? 
-      `Account has never been used `:
-      `Account unused for ${Math.round(monthsSinceLastUse)} months`;
-    factors.push(message);
-    shadowPermissions.push({
-      type: 'unused_account',
-      description: 'Unused Account - CRITICAL',
-      severity: 'high',
-      details: !lastUsed ?
-        `Account has never been used since creation (${Math.round(accountAge)} months ago). This is a critical security risk as unused accounts should be removed.` :
-        `Account has not been used for ${Math.round(monthsSinceLastUse)} months. This is a critical security risk as unused accounts should be removed.`
-    });
+  if (daysAgo <= 30) return 0;
+  if (daysAgo <= 90) return 2;
+  if (daysAgo <= 180) return 3;
+  return 5;
+}
+
+function calculatePermissionLevelScore(policies: Policy[]): number {
+  let maxScore = 0;
+
+  for (const policy of policies) {
+    const policyName = policy.name.toLowerCase();
+    
+    // Check for admin, wildcard, or full access patterns (5 points)
+    if (policyName.includes('administrator') || 
+        policyName.includes('fullaccess') || 
+        policyName.includes('full_access') ||
+        policyName.includes('*') ||
+        HIGH_RISK_PATTERNS.some(pattern => policyName.includes(pattern.toLowerCase()))) {
+      maxScore = Math.max(maxScore, 5);
+    }
+    // Check for write access patterns (2 points)
+    else if (policyName.includes('write') || 
+             policyName.includes('modify') || 
+             policyName.includes('update') ||
+             policyName.includes('create') ||
+             policyName.includes('delete')) {
+      maxScore = Math.max(maxScore, 2);
+    }
+    // Read-only access is 0 points
   }
 
-  // Check MFA status
-  if (!user.hasMFA) {
-    score += RISK_FACTORS.MFA_DISABLED;
-    factors.push('MFA is not enabled');
+  return maxScore;
+}
+
+function calculateIdentityContextScore(entity: UserDetails | RoleDetails): number {
+  if ('type' in entity && entity.type === 'role') {
+    // For roles, we need to check multiple factors to determine status
+    let isOrphaned = false;
+    
+    // Parse trust policy if it exists
+    if (entity.trustPolicy) {
+      try {
+        const trustPolicy = JSON.parse(decodeURIComponent(entity.trustPolicy));
+        isOrphaned = !trustPolicy.Statement || 
+                    !trustPolicy.Statement.some((stmt: any) => 
+                      stmt.Principal && 
+                      (stmt.Principal.Service || stmt.Principal.AWS || stmt.Principal.Federated)
+                    );
+      } catch (e) {
+        // If we can't parse the trust policy, consider it orphaned
+        isOrphaned = true;
+      }
+    } else {
+      isOrphaned = true;
+    }
+    
+    // Check if role is inactive by looking at last used date
+    const isInactive = !entity.lastUsed || 
+                      (() => {
+                        const lastUsedDate = new Date(entity.lastUsed!);
+                        const now = new Date();
+                        const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+                        return daysAgo > 90;
+                      })();
+
+    if (isOrphaned) {
+      return 5; // Orphaned role (no trust policy or no trusted entities)
+    }
+    if (isInactive) {
+      return 3; // Inactive role (no activity in 90+ days)
+    }
+    return 0; // Active role
   }
 
-  // Check for admin access
-  const hasAdminAccess = user.policies.some(policy => 
-    policy.name === 'AdministratorAccess' || 
-    policy.name.includes('Administrator')
-  );
-  if (hasAdminAccess) {
-    score += RISK_FACTORS.ADMIN_ACCESS;
-    factors.push('Has administrator access');
+  // For users
+  const user = entity as UserDetails;
+  
+  // A user is considered orphaned if:
+  // 1. No access keys or all keys are inactive
+  // 2. No MFA configured
+  // 3. No last used date
+  const isOrphaned = (!user.accessKeys || user.accessKeys.length === 0 || 
+                     user.accessKeys.every(key => key.status === 'Inactive')) &&
+                     !user.hasMFA && 
+                     !user.lastUsed;
+
+  // A user is considered inactive if:
+  // 1. No activity in 90+ days
+  // 2. All access keys are inactive
+  const isInactive = !user.lastUsed || 
+                    (() => {
+                      const lastUsedDate = new Date(user.lastUsed);
+                      const now = new Date();
+                      const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+                      return daysAgo > 90;
+                    })() ||
+                    (user.accessKeys && user.accessKeys.every(key => key.status === 'Inactive'));
+
+  if (isOrphaned) {
+    return 5; // Orphaned user
   }
-
-  // Check for power user access
-  const hasPowerUserAccess = user.policies.some(policy => 
-    policy.name === 'PowerUserAccess' || 
-    policy.name.includes('PowerUser')
-  );
-  if (hasPowerUserAccess) {
-    score += RISK_FACTORS.POWER_USER_ACCESS;
-    factors.push('Has power user access');
+  if (isInactive) {
+    return 3; // Inactive user
   }
+  return 0; // Active user
+}
 
-  // Check for full service access
-  const fullServiceAccess = user.policies.filter(policy => 
-    HIGH_RISK_PATTERNS.some(pattern => policy.name.includes(pattern))
-  );
-  if (fullServiceAccess.length > 0) {
-    score += RISK_FACTORS.FULL_SERVICE_ACCESS;
-    factors.push(`Has full access to ${fullServiceAccess.length} services`);
-  }
+function generateRiskFactors(
+  lastUsedScore: number,
+  permissionScore: number,
+  identityScore: number,
+  entity: UserDetails | RoleDetails
+): string[] {
+  const factors: string[] = [];
 
-  // Check for inline policies
-  const inlinePolicies = user.policies.filter(policy => policy.type === 'inline');
-  if (inlinePolicies.length > 0) {
-    score += RISK_FACTORS.INLINE_POLICIES;
-    factors.push(`Has ${inlinePolicies.length} inline policies`);
-  }
-
-  // Check for old access keys (shadow access)
-  if (user.accessKeys) {
-    const oldKeys = user.accessKeys.filter(key => {
-      const keyAge = (now.getTime() - new Date(key.createDate).getTime()) / (1000 * 60 * 60 * 24 * 30);
-      return keyAge > 6; // Keys older than 6 months
-    });
-
-    if (oldKeys.length > 0) {
-      score += RISK_FACTORS.OLD_ACCESS_KEY;
-      factors.push(`Has ${oldKeys.length} old access keys`);
-      shadowPermissions.push({
-        type: 'old_access',
-        description: 'Old Access Keys',
-        severity: 'medium',
-        details: `${oldKeys.length} access keys are older than 6 months`
-      });
+  // Last used factors
+  if (lastUsedScore > 0) {
+    if (lastUsedScore === 5) {
+      factors.push('No activity in over 180 days');
+    } else if (lastUsedScore === 3) {
+      factors.push('No activity in 91-180 days');
+    } else if (lastUsedScore === 2) {
+      factors.push('No activity in 31-90 days');
     }
   }
 
-  // Check for forgotten policies (shadow access)
-  const forgottenPolicies = user.policies.filter(policy => {
-    const policyAge = (now.getTime() - new Date(policy.updateDate).getTime()) / (1000 * 60 * 60 * 24 * 30);
-    return policyAge > 12; // Policies not updated in 12 months
-  });
-
-  if (forgottenPolicies.length > 0) {
-    score += RISK_FACTORS.FORGOTTEN_POLICY;
-    factors.push(`${forgottenPolicies.length} policies not reviewed in over a year`);
-    shadowPermissions.push({
-      type: 'forgotten_policy',
-      description: 'Forgotten Policies',
-      severity: 'high',
-      details: `${forgottenPolicies.length} policies haven't been reviewed in over a year`
-    });
+  // Permission level factors
+  if (permissionScore === 5) {
+    factors.push('full access permissions');
+  } else if (permissionScore === 2) {
+    factors.push('Has write/modify permissions');
   }
 
-  // Check for unused service access (shadow access)
-  const unusedServices = user.policies.filter(policy => 
-    SHADOW_PERMISSION_PATTERNS.UNUSED_SERVICES.some(service => 
-      policy.name.includes(service)
-    )
-  );
-
-  if (unusedServices.length > 0) {
-    score += RISK_FACTORS.UNUSED_SERVICE;
-    factors.push(`Has access to ${unusedServices.length} unused services`);
-    shadowPermissions.push({
-      type: 'unused_service',
-      description: 'Unused Service Access',
-      severity: 'medium',
-      details: `Has access to ${unusedServices.length} services that appear to be unused`
-    });
-  }
-
-  // Check for legacy policies (shadow access)
-  const legacyPolicies = user.policies.filter(policy => 
-    SHADOW_PERMISSION_PATTERNS.LEGACY_POLICIES.includes(policy.name)
-  );
-
-  if (legacyPolicies.length > 0) {
-    score += RISK_FACTORS.LEGACY_POLICY;
-    factors.push(`Has ${legacyPolicies.length} legacy policies`);
-    shadowPermissions.push({
-      type: 'legacy_policy',
-      description: 'Legacy Policies',
-      severity: 'medium',
-      details: `${legacyPolicies.length} legacy policies that should be reviewed`
-    });
-  }
-
-  // Check for excessive permissions
-  const totalPolicies = user.policies.length;
-  if (totalPolicies > 5) {
-    score += RISK_FACTORS.EXCESSIVE_PERMISSIONS;
-    factors.push(`Has ${totalPolicies} total policies`);
-    shadowPermissions.push({
-      type: 'excessive_permissions',
-      description: 'Excessive Permissions',
-      severity: 'high',
-      details: `User has ${totalPolicies} policies, which may indicate excessive permissions`
-    });
-  }
-
-  // Calculate risk level
-  let riskLevel: 'low' | 'medium' | 'high';
-  if (!lastUsed || (monthsSinceLastUse && monthsSinceLastUse > 3)) {
-    // If account has never been used or unused for more than 3 months, it's automatically high risk
-    riskLevel = 'high';
-  } else if (score >= 8) {
-    riskLevel = 'high';
-  } else if (score >= 4) {
-    riskLevel = 'medium';
+  // Identity context factors
+  if ('type' in entity && entity.type === 'role') {
+    if (identityScore === 5) {
+      const role = entity as RoleDetails;
+      if (!role.trustPolicy) {
+        factors.push('Role has no trust policy');
+      } else {
+        try {
+          const trustPolicy = JSON.parse(decodeURIComponent(role.trustPolicy));
+          if (!trustPolicy.Statement || 
+              !trustPolicy.Statement.some((stmt: any) => 
+                stmt.Principal && 
+                (stmt.Principal.Service || stmt.Principal.AWS || stmt.Principal.Federated)
+              )) {
+            factors.push('Role has no trusted entities in trust policy');
+          }
+        } catch (e) {
+          factors.push('Role has invalid trust policy');
+        }
+      }
+    } else if (identityScore === 3) {
+      factors.push('Role is inactive (no activity in 90+ days)');
+    }
   } else {
-    riskLevel = 'low';
+    const user = entity as UserDetails;
+    if (identityScore === 5) {
+      if (!user.accessKeys || user.accessKeys.length === 0) {
+        factors.push('User has no access keys');
+      } else if (user.accessKeys.every(key => key.status === 'Inactive')) {
+        factors.push('All access keys are inactive');
+      }
+      if (!user.hasMFA) {
+        factors.push('MFA is not enabled');
+      }
+    } else if (identityScore === 3) {
+      if (!user.lastUsed) {
+        factors.push('User has never been used');
+      } else {
+        factors.push('User is inactive (no activity in 90+ days)');
+      }
+      if (user.accessKeys && user.accessKeys.every(key => key.status === 'Inactive')) {
+        factors.push('All access keys are inactive');
+      }
+    }
   }
+
+  return factors;
+}
+
+function determineRiskLevel(totalScore: number): 'low' | 'medium' | 'high' | 'critical' {
+  if (totalScore <= 4) return 'low';
+  if (totalScore <= 9) return 'medium';
+  if (totalScore <= 14) return 'high';
+  return 'critical';
+}
+
+function getRiskLevelDescription(riskLevel: 'low' | 'medium' | 'high' | 'critical'): string {
+  switch (riskLevel) {
+    case 'low':
+      return 'No action needed. Permission is considered safe.';
+    case 'medium':
+      return 'Review the permission. It may be unnecessary or outdated.';
+    case 'high':
+      return 'Investigate. This permission may pose a significant security risk.';
+    case 'critical':
+      return 'Immediate action required. The permission is highly risky and should be removed or corrected.';
+  }
+}
+
+export function calculateRiskScore(entity: UserDetails | RoleDetails): RiskScore {
+  // Calculate individual scores
+  const lastUsedScore = calculateLastUsedScore(entity.lastUsed);
+  const permissionScore = calculatePermissionLevelScore(entity.policies);
+  const identityScore = calculateIdentityContextScore(entity);
+
+  // Calculate total score
+  const totalScore = lastUsedScore + permissionScore + identityScore;
+
+  // Generate risk factors
+  const factors = generateRiskFactors(lastUsedScore, permissionScore, identityScore, entity);
+
+  // Determine risk level
+  const riskLevel = determineRiskLevel(totalScore);
+
+  // Generate shadow permissions
+  const shadowPermissions = entity.policies
+    .filter(policy => {
+      const policyName = policy.name.toLowerCase();
+      return HIGH_RISK_PATTERNS.some(pattern => policyName.includes(pattern.toLowerCase())) ||
+             MEDIUM_RISK_PATTERNS.some(pattern => policyName.includes(pattern.toLowerCase()));
+    })
+    .map(policy => {
+      const policyName = policy.name.toLowerCase();
+      const isHighRisk = HIGH_RISK_PATTERNS.some(pattern => policyName.includes(pattern.toLowerCase()));
+      const severity: 'low' | 'medium' | 'high' | 'critical' = isHighRisk ? 'high' : 'medium';
+      
+      return {
+        type: isHighRisk ? 'excessive_permissions' : 'unused_service',
+        description: isHighRisk ? 'High-risk permissions detected' : 'Medium-risk permissions detected',
+        severity,
+        details: `Policy "${policy.name}" grants ${isHighRisk ? 'excessive' : 'potentially unnecessary'} permissions. ${getRiskLevelDescription(severity)}`
+      };
+    });
 
   return {
     riskLevel,
-    score,
+    score: totalScore,
     factors,
     shadowPermissions
   };
