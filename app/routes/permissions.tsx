@@ -1,4 +1,4 @@
-import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter } from "lucide-react";
+import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown } from "lucide-react";
 import { useLoaderData } from "@remix-run/react";
 import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
@@ -222,20 +222,36 @@ function getProviderInfo(provider: 'aws' | 'azure' | 'gcp') {
   }
 }
 
+type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' | 'risk' | 'policies';
+type SortDirection = 'asc' | 'desc';
+
 export default function Permissions() {
   const { users = [], roles = [], error } = useLoaderData<LoaderData>();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
-  // Combine users and roles into a single array for filtering
+  // Handle sort click
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Combine users and roles into a single array for filtering and sorting
   const allEntities = useMemo(() => {
     const combined = [
       ...users.map(user => ({ ...user, type: 'user' as const })),
       ...roles.map(role => ({ ...role, type: 'role' as const }))
     ];
 
-    return combined.filter(entity => {
+    // First filter
+    const filtered = combined.filter(entity => {
       // Search filter
       const searchLower = searchQuery.toLowerCase();
       const entityName = entity.type === 'user' 
@@ -254,7 +270,53 @@ export default function Permissions() {
 
       return matchesSearch && matchesType && matchesRisk;
     });
-  }, [users, roles, searchQuery, typeFilter, riskFilter]);
+
+    // Then sort
+    return filtered.sort((a, b) => {
+      const modifier = sortDirection === 'asc' ? 1 : -1;
+      
+      switch (sortField) {
+        case 'type':
+          return modifier * (a.type.localeCompare(b.type));
+        case 'provider':
+          return modifier * (a.provider.localeCompare(b.provider));
+        case 'name':
+          const aName = a.type === 'user' ? (a as IAMUser).userName : (a as IAMRole).roleName;
+          const bName = b.type === 'user' ? (b as IAMUser).userName : (b as IAMRole).roleName;
+          return modifier * ((aName || '').localeCompare(bName || ''));
+        case 'created':
+          return modifier * (new Date(a.createDate).getTime() - new Date(b.createDate).getTime());
+        case 'lastUsed':
+          const aLastUsed = a.lastUsed ? new Date(a.lastUsed).getTime() : 0;
+          const bLastUsed = b.lastUsed ? new Date(b.lastUsed).getTime() : 0;
+          return modifier * (aLastUsed - bLastUsed);
+        case 'mfa':
+          if (a.type === 'user' && b.type === 'user') {
+            const aMFA = (a as IAMUser).hasMFA;
+            const bMFA = (b as IAMUser).hasMFA;
+            if (aMFA === bMFA) return 0;
+            return modifier * (aMFA ? 1 : -1);
+          } else if (a.type === 'user') {
+            return modifier * -1;
+          } else if (b.type === 'user') {
+            return modifier * 1;
+          } else {
+            return 0;
+          }
+        case 'risk':
+          const aRisk = a.riskAssessment?.riskLevel || 'low';
+          const bRisk = b.riskAssessment?.riskLevel || 'low';
+          const riskOrder = { low: 0, medium: 1, high: 2, critical: 3 };
+          return modifier * (riskOrder[aRisk] - riskOrder[bRisk]);
+        case 'policies':
+          const aPolicies = a.policies?.length || 0;
+          const bPolicies = b.policies?.length || 0;
+          return modifier * (aPolicies - bPolicies);
+        default:
+          return 0;
+      }
+    });
+  }, [users, roles, searchQuery, typeFilter, riskFilter, sortField, sortDirection]);
 
   // Add early return for error state
   if (error) {
@@ -274,6 +336,14 @@ export default function Permissions() {
   // Calculate total access keys safely
   const totalAccessKeys = users?.reduce((acc, user) => acc + (user?.accessKeys?.length || 0), 0) || 0;
   const totalEntities = (users?.length || 0) + (roles?.length || 0);
+
+  // Helper function to render sort indicator
+  const SortIndicator = ({ field }: { field: SortField }) => {
+    if (sortField !== field) return null;
+    return sortDirection === 'asc' 
+      ? <ArrowUp className="w-4 h-4 ml-1" /> 
+      : <ArrowDown className="w-4 h-4 ml-1" />;
+  };
 
   return (
     <div className="flex flex-col h-screen bg-[#181C23]">
@@ -373,24 +443,88 @@ export default function Permissions() {
             </div>
           </div>
           
-          {error ? (
-            <div className="bg-red-900/20 border border-red-500/20 rounded-xl p-6 text-red-400">
-              {error}
-            </div>
-          ) : (
-            <div className="flex-1 relative bg-[#181C23] rounded-xl border border-[#23272f] overflow-hidden">
+          <div className="flex-1 relative bg-[#181C23] rounded-xl border border-[#23272f] overflow-hidden">
+            {error ? (
+              <div className="bg-red-900/20 border border-red-500/20 rounded-xl p-6 text-red-400">
+                {error}
+              </div>
+            ) : (
               <div className="absolute inset-0 overflow-auto">
                 <table className="w-full text-lg text-left">
                   <thead className="sticky top-0 z-10 text-lg text-blue-300 uppercase bg-[#1a1f28]">
                     <tr>
-                      <th className="px-6 py-4 font-semibold">Type</th>
-                      <th className="px-6 py-4 font-semibold">Provider</th>
-                      <th className="px-6 py-4 font-semibold">Name</th>
-                      <th className="px-6 py-4 font-semibold">Created</th>
-                      <th className="px-6 py-4 font-semibold">Last Used</th>
-                      <th className="px-6 py-4 font-semibold">MFA</th>
-                      <th className="px-6 py-4 font-semibold">Risk Level</th>
-                      <th className="px-6 py-4 font-semibold">Policies</th>
+                      <th 
+                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                        onClick={() => handleSort('type')}
+                      >
+                        <div className="flex items-center">
+                          Type
+                          <SortIndicator field="type" />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                        onClick={() => handleSort('provider')}
+                      >
+                        <div className="flex items-center">
+                          Provider
+                          <SortIndicator field="provider" />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                        onClick={() => handleSort('name')}
+                      >
+                        <div className="flex items-center">
+                          Name
+                          <SortIndicator field="name" />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                        onClick={() => handleSort('created')}
+                      >
+                        <div className="flex items-center">
+                          Created
+                          <SortIndicator field="created" />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                        onClick={() => handleSort('lastUsed')}
+                      >
+                        <div className="flex items-center">
+                          Last Used
+                          <SortIndicator field="lastUsed" />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                        onClick={() => handleSort('mfa')}
+                      >
+                        <div className="flex items-center">
+                          MFA
+                          <SortIndicator field="mfa" />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                        onClick={() => handleSort('risk')}
+                      >
+                        <div className="flex items-center">
+                          Risk Level
+                          <SortIndicator field="risk" />
+                        </div>
+                      </th>
+                      <th 
+                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
+                        onClick={() => handleSort('policies')}
+                      >
+                        <div className="flex items-center">
+                          Policies
+                          <SortIndicator field="policies" />
+                        </div>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#23272f]">
@@ -687,8 +821,8 @@ export default function Permissions() {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
