@@ -804,7 +804,9 @@ export default function Permissions() {
                                           <div className="p-2 rounded-lg bg-blue-500/10">
                                             <User className="w-4 h-4 text-blue-400" />
                                           </div>
-                                          <h4 className="text-sm font-semibold text-white">Activity Score</h4>
+                                          <h4 className={`text-sm font-semibold ${entity.riskAssessment?.factors.some(f => f.includes('activity')) ? 'text-red-400' : 'text-white'}`}>
+                                            Activity Score +{entity.riskAssessment?.factors.filter(f => f.includes('activity')).length ? 5 : 0}
+                                          </h4>
                                         </div>
                                         <div className="space-y-2">
                                           <div className="flex justify-between items-center">
@@ -830,7 +832,9 @@ export default function Permissions() {
                                           <div className="p-2 rounded-lg bg-purple-500/10">
                                             <Key className="w-4 h-4 text-purple-400" />
                                           </div>
-                                          <h4 className="text-sm font-semibold text-white">Permission Score</h4>
+                                          <h4 className={`text-sm font-semibold ${entity.riskAssessment?.factors.some(f => f.includes('permission')) ? 'text-red-400' : 'text-white'}`}>
+                                            Permission Score +{entity.riskAssessment?.factors.filter(f => f.includes('permission')).length ? 5 : 0}
+                                          </h4>
                                         </div>
                                         <div className="space-y-2">
                                           <div className="flex justify-between items-center">
@@ -852,7 +856,9 @@ export default function Permissions() {
                                           <div className="p-2 rounded-lg bg-green-500/10">
                                             <Shield className="w-4 h-4 text-green-400" />
                                           </div>
-                                          <h4 className="text-sm font-semibold text-white">Identity Context</h4>
+                                          <h4 className={`text-sm font-semibold ${entity.riskAssessment?.factors.some(f => f.includes('MFA') || f.includes('inactive') || f.includes('orphaned')) ? 'text-red-400' : 'text-white'}`}>
+                                            Identity Context +{entity.riskAssessment?.factors.filter(f => f.includes('MFA') || f.includes('inactive') || f.includes('orphaned')).length ? 5 : 0}
+                                          </h4>
                                         </div>
                                         <div className="space-y-2">
                                           {entity.type === 'user' && (
