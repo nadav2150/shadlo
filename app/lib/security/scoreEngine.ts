@@ -1,89 +1,204 @@
-import type { ShadowPermissionRisk, UserDetails } from "~/lib/iam/types";
-
-interface SecurityScoreFactors {
-  shadowPermissions: ShadowPermissionRisk[];
-  users: UserDetails[];
-  previousScore?: number; // For trend calculation
-}
+import type { UserDetails, RoleDetails } from "~/lib/iam/types";
 
 interface SecurityScore {
-  score: number;
-  trend: number;
-  breakdown: {
-    baseScore: number;
-    highRiskDeduction: number;
-    mediumRiskDeduction: number;
-    userActivityImpact: number;
+  overallScore: number;  // 0-100, where 100 is most secure
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  factors: {
+    category: string;
+    score: number;
+    details: string[];
+  }[];
+  recommendations: string[];
+}
+
+function calculateEntityScores(entities: (UserDetails | RoleDetails)[]): {
+  lastUsedScore: number;
+  permissionScore: number;
+  identityScore: number;
+  totalEntities: number;
+} {
+  let totalLastUsedScore = 0;
+  let totalPermissionScore = 0;
+  let totalIdentityScore = 0;
+  const totalEntities = entities.length;
+
+  entities.forEach(entity => {
+    // Last Used Score (0-5 points per entity)
+    if (!entity.lastUsed) {
+      totalLastUsedScore += 5; // No last used date
+    } else {
+      const lastUsedDate = new Date(entity.lastUsed);
+      const now = new Date();
+      const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysAgo <= 30) totalLastUsedScore += 0;
+      else if (daysAgo <= 90) totalLastUsedScore += 2;
+      else if (daysAgo <= 180) totalLastUsedScore += 3;
+      else totalLastUsedScore += 5;
+    }
+
+    // Permission Score (0-5 points per entity)
+    let maxPermissionScore = 0;
+    for (const policy of entity.policies) {
+      const policyName = policy.name.toLowerCase();
+      
+      // Check for admin, wildcard, or full access patterns (5 points)
+      if (policyName.includes('administrator') || 
+          policyName.includes('fullaccess') || 
+          policyName.includes('full_access') ||
+          policyName.includes('*')) {
+        maxPermissionScore = Math.max(maxPermissionScore, 5);
+      }
+      // Check for write access patterns (2 points)
+      else if (policyName.includes('write') || 
+               policyName.includes('modify') || 
+               policyName.includes('update') ||
+               policyName.includes('create') ||
+               policyName.includes('delete')) {
+        maxPermissionScore = Math.max(maxPermissionScore, 2);
+      }
+    }
+    totalPermissionScore += maxPermissionScore;
+
+    // Identity Context Score (0-5 points per entity)
+    if ('type' in entity && entity.type === 'role') {
+      // For roles
+      if (!entity.trustPolicy) {
+        totalIdentityScore += 5; // Orphaned role
+      } else {
+        try {
+          const trustPolicy = JSON.parse(decodeURIComponent(entity.trustPolicy));
+          if (!trustPolicy.Statement || 
+              !trustPolicy.Statement.some((stmt: any) => 
+                stmt.Principal && 
+                (stmt.Principal.Service || stmt.Principal.AWS || stmt.Principal.Federated)
+              )) {
+            totalIdentityScore += 5; // Role with no trusted entities
+          }
+        } catch (e) {
+          totalIdentityScore += 5; // Invalid trust policy
+        }
+      }
+    } else {
+      // For users
+      const user = entity as UserDetails;
+      const isOrphaned = (!user.accessKeys || user.accessKeys.length === 0 || 
+                         user.accessKeys.every(key => key.status === 'Inactive')) &&
+                         !user.hasMFA && 
+                         !user.lastUsed;
+      
+      const isInactive = !user.lastUsed || 
+                        (() => {
+                          const lastUsedDate = new Date(user.lastUsed!);
+                          const now = new Date();
+                          const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+                          return daysAgo > 90;
+                        })() ||
+                        (user.accessKeys && user.accessKeys.every(key => key.status === 'Inactive'));
+
+      if (isOrphaned) totalIdentityScore += 5;
+      else if (isInactive) totalIdentityScore += 3;
+    }
+  });
+
+  return {
+    lastUsedScore: totalLastUsedScore / totalEntities,
+    permissionScore: totalPermissionScore / totalEntities,
+    identityScore: totalIdentityScore / totalEntities,
+    totalEntities
   };
 }
 
-// Constants for scoring
-const SCORE_CONSTANTS = {
-  BASE_SCORE: 100,
-  HIGH_RISK_DEDUCTION: 10,
-  MEDIUM_RISK_DEDUCTION: 5,
-  MIN_SCORE: 0,
-  MAX_SCORE: 100,
-  USER_ACTIVITY_WEIGHT: 0.1, // Weight for user activity impact
-} as const;
+function generateRecommendations(scores: {
+  lastUsedScore: number;
+  permissionScore: number;
+  identityScore: number;
+  totalEntities: number;
+}): string[] {
+  const recommendations: string[] = [];
 
-export function calculateSecurityScore({
-  shadowPermissions,
-  users,
-  previousScore,
-}: SecurityScoreFactors): SecurityScore {
-  // Initialize score components
-  const breakdown = {
-    baseScore: SCORE_CONSTANTS.BASE_SCORE,
-    highRiskDeduction: 0,
-    mediumRiskDeduction: 0,
-    userActivityImpact: 0,
-  };
+  // Last Used Score recommendations
+  if (scores.lastUsedScore >= 3) {
+    recommendations.push("Review and remove unused IAM entities (no activity in 90+ days)");
+  } else if (scores.lastUsedScore >= 2) {
+    recommendations.push("Monitor IAM entities with no recent activity (31-90 days)");
+  }
 
-  // Calculate risk-based deductions
-  const highRiskCount = shadowPermissions.filter(p => p.severity === 'high').length;
-  const mediumRiskCount = shadowPermissions.filter(p => p.severity === 'medium').length;
-  
-  breakdown.highRiskDeduction = highRiskCount * SCORE_CONSTANTS.HIGH_RISK_DEDUCTION;
-  breakdown.mediumRiskDeduction = mediumRiskCount * SCORE_CONSTANTS.MEDIUM_RISK_DEDUCTION;
+  // Permission Score recommendations
+  if (scores.permissionScore >= 4) {
+    recommendations.push("Review and reduce excessive permissions (administrator/full access)");
+  } else if (scores.permissionScore >= 2) {
+    recommendations.push("Audit write/modify permissions and implement least privilege");
+  }
 
-  // Calculate user activity impact
-  // This is a simple implementation - you might want to make this more sophisticated
-  const totalPermissions = shadowPermissions.length;
-  const activeUsers = users.length;
-  
-  // If there are no permissions or users, we don't apply the user activity impact
-  if (totalPermissions > 0 && activeUsers > 0) {
-    const permissionsPerUser = totalPermissions / activeUsers;
-    // Penalize if there are too many permissions per user (indicating potential permission sprawl)
-    if (permissionsPerUser > 10) {
-      breakdown.userActivityImpact = -5;
-    } else if (permissionsPerUser > 5) {
-      breakdown.userActivityImpact = -2;
+  // Identity Context Score recommendations
+  if (scores.identityScore >= 4) {
+    recommendations.push("Address orphaned roles and users (no trust policy or inactive access keys)");
+  } else if (scores.identityScore >= 2) {
+    recommendations.push("Enable MFA for users and review inactive accounts");
+  }
+
+  return recommendations;
+}
+
+export function calculateSecurityScore(users: UserDetails[], roles: RoleDetails[]): SecurityScore {
+  const allEntities = [...users, ...roles];
+  const scores = calculateEntityScores(allEntities);
+
+  // Calculate weighted average score (0-100)
+  // Weights: Last Used (30%), Permissions (40%), Identity Context (30%)
+  const weightedScore = 100 - (
+    (scores.lastUsedScore * 0.30) +
+    (scores.permissionScore * 0.40) +
+    (scores.identityScore * 0.30)
+  ) * (100 / 5); // Convert from 0-5 scale to 0-100
+
+  // Determine risk level
+  let riskLevel: 'low' | 'medium' | 'high' | 'critical';
+  if (weightedScore >= 80) riskLevel = 'low';
+  else if (weightedScore >= 60) riskLevel = 'medium';
+  else if (weightedScore >= 40) riskLevel = 'high';
+  else riskLevel = 'critical';
+
+  // Generate factors
+  const factors = [
+    {
+      category: "Activity Score",
+      score: 100 - (scores.lastUsedScore * (100 / 5)),
+      details: [
+        `Average last used score: ${scores.lastUsedScore.toFixed(1)}/5`,
+        scores.lastUsedScore >= 3 ? "High number of inactive entities" : 
+        scores.lastUsedScore >= 2 ? "Some entities showing inactivity" : 
+        "Good activity levels across entities"
+      ]
+    },
+    {
+      category: "Permission Score",
+      score: 100 - (scores.permissionScore * (100 / 5)),
+      details: [
+        `Average permission score: ${scores.permissionScore.toFixed(1)}/5`,
+        scores.permissionScore >= 4 ? "Excessive permissions detected" :
+        scores.permissionScore >= 2 ? "Moderate permission levels" :
+        "Good permission management"
+      ]
+    },
+    {
+      category: "Identity Context Score",
+      score: 100 - (scores.identityScore * (100 / 5)),
+      details: [
+        `Average identity context score: ${scores.identityScore.toFixed(1)}/5`,
+        scores.identityScore >= 4 ? "Critical identity management issues" :
+        scores.identityScore >= 2 ? "Identity management needs improvement" :
+        "Good identity management practices"
+      ]
     }
-  }
-
-  // Calculate final score
-  let score = breakdown.baseScore - 
-              breakdown.highRiskDeduction - 
-              breakdown.mediumRiskDeduction + 
-              breakdown.userActivityImpact;
-
-  // Ensure score stays within bounds
-  score = Math.max(SCORE_CONSTANTS.MIN_SCORE, Math.min(SCORE_CONSTANTS.MAX_SCORE, score));
-
-  // Calculate trend
-  let trend = 0;
-  if (previousScore !== undefined) {
-    trend = ((score - previousScore) / previousScore) * 100;
-    // Round to 1 decimal place
-    trend = Math.round(trend * 10) / 10;
-  }
+  ];
 
   return {
-    score: Math.round(score),
-    trend,
-    breakdown,
+    overallScore: Math.round(weightedScore),
+    riskLevel,
+    factors,
+    recommendations: generateRecommendations(scores)
   };
 }
 

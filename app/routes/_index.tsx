@@ -1,14 +1,15 @@
 import type { MetaFunction, LoaderFunction } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
 import { json } from "@remix-run/node";
+import { IAMClient } from "@aws-sdk/client-iam";
 import { Stats } from "~/components/Stats";
 import { Alerts } from "~/components/Alerts";
 import { Button } from "~/components/ui/button";
 import { Cloud, Shield, Scan, FileText, Eye, Plus, CheckCircle, AlertCircle, Settings } from "lucide-react";
 import { getAwsCredentials } from "~/utils/session.server";
-import { getIAMUsers } from "~/lib/iam/aws.server";
+import { getIAMUsers, getIAMRoles } from "~/lib/iam/aws-operations";
 import { calculateRiskScore } from "~/lib/iam/risk-assessment";
-import type { ShadowPermissionRisk, UserDetails } from "~/lib/iam/types";
+import type { ShadowPermissionRisk, UserDetails, RoleDetails } from "~/lib/iam/types";
 
 export const meta: MetaFunction = () => {
   return [
@@ -20,25 +21,63 @@ export const meta: MetaFunction = () => {
 export const loader: LoaderFunction = async ({ request }) => {
   const credentials = await getAwsCredentials(request);
   
-  // Get IAM users and calculate their risk assessments
-  const users = credentials ? await getIAMUsers(credentials) : [];
-  const shadowPermissions: ShadowPermissionRisk[] = [];
-  
-  // Calculate risk scores and collect shadow permissions
-  users.forEach((user: UserDetails) => {
-    const riskAssessment = calculateRiskScore(user);
-    shadowPermissions.push(...riskAssessment.shadowPermissions);
-  });
+  if (!credentials) {
+    return json({ 
+      credentials: null,
+      users: [],
+      roles: [],
+      error: "AWS credentials not found. Please add your credentials in the Settings page."
+    });
+  }
 
-  return json({ 
-    credentials,
-    shadowPermissions,
-    users
-  });
+  try {
+    // Initialize AWS IAM client
+    const iamClient = new IAMClient({
+      region: credentials.region,
+      credentials: {
+        accessKeyId: credentials.accessKeyId,
+        secretAccessKey: credentials.secretAccessKey,
+      },
+    });
+
+    const [users, roles] = await Promise.all([
+      getIAMUsers(iamClient),
+      getIAMRoles(iamClient)
+    ]);
+
+    return json({ 
+      credentials,
+      users,
+      roles,
+      error: null
+    });
+  } catch (error) {
+    console.error("Error fetching IAM data:", error);
+    return json({ 
+      credentials,
+      users: [],
+      roles: [],
+      error: "Failed to fetch IAM data. Please check your AWS credentials."
+    });
+  }
 };
 
 const Index = () => {
-  const { credentials, shadowPermissions, users } = useLoaderData<typeof loader>();
+  const { credentials, users, roles, error } = useLoaderData<typeof loader>();
+
+  // Calculate shadow permissions for all entities and deduplicate them
+  const shadowPermissions: ShadowPermissionRisk[] = [
+    ...users.map((user: UserDetails) => calculateRiskScore(user).shadowPermissions),
+    ...roles.map((role: RoleDetails) => calculateRiskScore(role).shadowPermissions)
+  ]
+    .flat()
+    // Deduplicate based on policy name and type
+    .filter((permission, index, self) => 
+      index === self.findIndex(p => 
+        p.type === permission.type && 
+        p.details.includes(permission.details.split('"')[1]) // Extract policy name from details
+      )
+    );
 
   const handleConnect = (service: string) => {
     console.log(`Connecting to ${service}...`);
@@ -51,6 +90,16 @@ const Index = () => {
     Okta: false
   };
 
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="bg-red-900/20 border border-red-500/20 rounded-xl p-6 text-red-400">
+          {error}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       {/* Header Section */}
@@ -62,16 +111,17 @@ const Index = () => {
       </div>
 
       {/* Stats Section */}
-      <Stats shadowPermissions={shadowPermissions} users={users} />
+      <Stats users={users} roles={roles} />
 
+      {/* Main Content Grid: Alerts and Service Connections */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        {/* Alerts - Takes up 2 columns on xl screens */}
+        {/* Alerts Section - Takes up 2 columns on xl screens */}
         <div className="xl:col-span-2">
           <Alerts shadowPermissions={shadowPermissions} />
         </div>
         
-        {/* Service Connections */}
-        <div className="bg-white/5 border border-gray-800 rounded-xl p-6">
+        {/* Service Connections Section - Takes up 1 column on xl screens */}
+        <div className="xl:col-span-1 bg-white/5 border border-gray-800 rounded-xl p-6">
           <div className="flex items-center gap-2 mb-6">
             <Cloud className="w-6 h-6 text-secondary" />
             <h2 className="text-xl font-semibold text-white">Cloud Services</h2>
@@ -136,22 +186,6 @@ const Index = () => {
               Generate comprehensive security analysis
             </p>
           </button>
-        </div>
-      </div>
-
-      {/* Security Status Banner */}
-      <div className="bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/20 rounded-xl p-6">
-        <div className="flex items-center gap-4">
-          <AlertCircle className="w-8 h-8 text-yellow-400 flex-shrink-0" />
-          <div>
-            <h3 className="text-lg font-semibold text-white mb-1">Security Status: Medium Risk</h3>
-            <p className="text-gray-300">
-              3 critical issues detected across your cloud infrastructure. 
-              <button className="text-secondary hover:text-secondary/80 ml-2 underline">
-                View Details →
-              </button>
-            </p>
-          </div>
         </div>
       </div>
     </div>
