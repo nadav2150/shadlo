@@ -169,10 +169,15 @@ function generateRiskFactors(
       if (!user.lastUsed) {
         factors.push('User has never been used');
       } else {
-        factors.push('User is inactive (no activity in 90+ days)');
+        const lastUsedDate = new Date(user.lastUsed);
+        const now = new Date();
+        const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (daysAgo > 90) {
+          factors.push('User is inactive (no activity in 90+ days)');
+        }
       }
       if (user.accessKeys && user.accessKeys.every(key => key.status === 'Inactive')) {
-        factors.push('All access keys are inactive');
+        factors.push('Orphaned entity');
       }
     }
   } else {  // This must be a role
