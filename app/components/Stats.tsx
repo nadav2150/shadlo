@@ -54,6 +54,10 @@ export function Stats({ users, roles, shadowPermissions, hasCredentials }: Stats
 
   // Calculate total risk score
   const totalRiskScore = hasCredentials ? riskScores.reduce((sum, factor) => sum + factor.score, 0) : 0;
+
+  // Calculate total entities and create combined array
+  const allEntities = [...users, ...roles];
+  const totalEntities = allEntities.length;
   
   const RiskScoreModal = () => (
     <Modal
@@ -171,52 +175,86 @@ export function Stats({ users, roles, shadowPermissions, hasCredentials }: Stats
     <>
       <RiskScoreModal />
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white/5 border border-gray-800 rounded-xl p-6 flex flex-col items-center">
+        <div className="bg-white/5 border border-gray-800 rounded-xl p-6 flex flex-col items-center justify-center text-center">
           <span className={`text-3xl font-bold ${hasCredentials ? getRiskLevelColor(riskLevel) : 'text-gray-400'}`}>
             {hasCredentials ? riskLevel.toUpperCase() : 'N/A'}
           </span>
           <span className="text-gray-400 mt-2">Overall Risk Level</span>
-          <div className="text-xs text-gray-500 mt-2 text-center">
+          <div className="text-xs text-gray-500 mt-2">
             {hasCredentials ? (
-              <>
+              <div className="flex flex-col items-center">
                 <div>Security Score: {overallScore}%</div>
-              </>
+                <div className="mt-1 text-xs">
+                  {riskLevel === 'critical' ? 'Critical Risk' :
+                   riskLevel === 'high' ? 'High Risk' :
+                   riskLevel === 'medium' ? 'Medium Risk' : 'Low Risk'}
+                </div>
+              </div>
             ) : (
               <div>Connect AWS to view security metrics</div>
             )}
           </div>
         </div>
         
-        <div className="bg-white/5 border border-gray-800 rounded-xl p-6 flex flex-col items-center">
-          <div className="flex items-center gap-2">
-            <span className="text-3xl font-bold text-white">{hasCredentials ? totalRiskScore : 'N/A'}</span>
+        <div className="bg-white/5 border border-gray-800 rounded-xl p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-400">Risk Distribution</span>
             {hasCredentials && (
               <button 
                 onClick={() => setShowRiskScoreModal(true)}
                 className="text-gray-400 hover:text-gray-300 transition-colors"
                 title="Learn more about risk scores"
               >
-                <Info className="w-5 h-5" />
+                <Info className="w-4 h-4" />
               </button>
             )}
           </div>
-          <span className="text-red-400 text-sm">Total Risk Score</span>
-          {!hasCredentials && (
-            <div className="text-xs text-gray-500 mt-2 text-center">
-              Connect AWS to view security metrics
+          
+          {hasCredentials ? (
+            <div className="space-y-1.5">
+              {[
+                { level: 'critical', color: 'bg-red-500/10', textColor: 'text-red-400', borderColor: 'border-red-500/20' },
+                { level: 'high', color: 'bg-orange-500/10', textColor: 'text-orange-400', borderColor: 'border-orange-500/20' },
+                { level: 'medium', color: 'bg-yellow-500/10', textColor: 'text-yellow-400', borderColor: 'border-yellow-500/20' },
+                { level: 'low', color: 'bg-green-500/10', textColor: 'text-green-400', borderColor: 'border-green-500/20' }
+              ].map(({ level, color, textColor, borderColor }) => {
+                const count = allEntities.filter(e => e.riskAssessment?.riskLevel === level).length;
+                const percentage = totalEntities > 0 ? (count / totalEntities) * 100 : 0;
+                
+                return (
+                  <div key={level} className={`px-2 py-1 rounded-lg border ${borderColor} ${color}`}>
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className={`text-xs font-medium ${textColor}`}>
+                        {level.charAt(0).toUpperCase() + level.slice(1)}
+                      </span>
+                      <span className="text-xs text-white">{count}</span>
+                    </div>
+                    <div className="w-full bg-gray-800 rounded-full h-1">
+                      <div 
+                        className={`h-1 rounded-full ${color.replace('/10', '')}`}
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center text-xs text-gray-400">
+              Connect AWS to view risk distribution
             </div>
           )}
         </div>
 
-        <div className="bg-white/5 border border-gray-800 rounded-xl p-6 flex flex-col items-center">
+        <div className="bg-white/5 border border-gray-800 rounded-xl p-6 flex flex-col items-center justify-center text-center">
           <span className="text-3xl font-bold text-white">{hasCredentials ? users.length + roles.length : 'N/A'}</span>
           <span className="text-gray-400 mt-2">Total Entities</span>
-          <div className="text-xs text-gray-500 mt-2 text-center">
+          <div className="text-xs text-gray-500 mt-2">
             {hasCredentials ? (
-              <>
+              <div className="flex flex-col items-center">
                 <div>{users.length} Users</div>
                 <div>{roles.length} Roles</div>
-              </>
+              </div>
             ) : (
               <div>Connect AWS to view entities</div>
             )}
