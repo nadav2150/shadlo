@@ -13,8 +13,8 @@ import type { ShadowPermissionRisk, UserDetails, RoleDetails } from "~/lib/iam/t
 
 export const meta: MetaFunction = () => {
   return [
-    { title: "New Remix App" },
-    { name: "description", content: "Welcome to Remix!" },
+    { title: "Shadlo - Cloud Security Dashboard" },
+    { name: "description", content: "Detect and score hidden cloud permissions risks" },
   ];
 };
 
@@ -78,47 +78,37 @@ function generateScoreHistory(users: UserDetails[], roles: RoleDetails[]) {
 }
 
 export const loader: LoaderFunction = async ({ request }) => {
-  const credentials = await getAwsCredentials(request);
-  
-  if (!credentials) {
-    return json({ 
-      credentials: null,
-      users: [],
-      roles: [],
-      scoreHistory: [],
-      error: null
-    });
-  }
-
   try {
-    // Initialize AWS IAM client
-    const iamClient = new IAMClient({
-      region: credentials.region,
-      credentials: {
-        accessKeyId: credentials.accessKeyId,
-        secretAccessKey: credentials.secretAccessKey,
+    // Get the base URL from the request
+    const url = new URL(request.url);
+    const baseUrl = `${url.protocol}//${url.host}`;
+    
+    // Get the cookie header from the original request
+    const cookieHeader = request.headers.get("Cookie");
+    
+    // Make the request to the IAM API using the full URL and forwarding cookies
+    const response = await fetch(`${baseUrl}/api/iam-entities`, {
+      headers: {
+        Cookie: cookieHeader || "",
       },
     });
-
-    const [users, roles] = await Promise.all([
-      getIAMUsers(iamClient),
-      getIAMRoles(iamClient)
-    ]);
-
-    // Generate score history
-    const scoreHistory = generateScoreHistory(users, roles);
+    
+    const data = await response.json();
+    
+    // Generate score history using the fetched data
+    const scoreHistory = generateScoreHistory(data.users || [], data.roles || []);
 
     return json({ 
-      credentials,
-      users,
-      roles,
+      credentials: data.credentials,
+      users: data.users || [],
+      roles: data.roles || [],
       scoreHistory,
-      error: null
+      error: data.error || null
     });
   } catch (error) {
     console.error("Error fetching IAM data:", error);
     return json({ 
-      credentials,
+      credentials: null,
       users: [],
       roles: [],
       scoreHistory: [],
