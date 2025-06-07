@@ -147,6 +147,7 @@ function ProviderCard({
   accountDetails 
 }: ProviderCardProps) {
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
+  const isComingSoon = name === "Azure" || name === "Okta";
 
   return (
     <div className="bg-white/5 border border-white/10 rounded-lg p-6 hover:border-white/20 transition-colors">
@@ -156,7 +157,18 @@ function ProviderCard({
             {icon}
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">{name}</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-semibold text-white">{name}</h3>
+              {isComingSoon ? (
+                <span className="px-2 py-0.5 text-xs font-medium bg-purple-500/20 text-purple-400 rounded-full">
+                  Coming Soon
+                </span>
+              ) : isConnected && (
+                <span className="px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded-full">
+                  Connected
+                </span>
+              )}
+            </div>
             <p className="text-gray-400 mt-1">{description}</p>
             {isConnected && accountDetails?.accountId && (
               <div className="mt-2 text-sm text-gray-400">
@@ -172,22 +184,16 @@ function ProviderCard({
         </div>
         <div className="flex items-center gap-2">
           {isConnected ? (
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-sm text-green-400">
-                <CheckCircle2 className="w-4 h-4" />
-                Connected
-              </span>
-              <Button
-                onClick={onManage}
-                variant="outline"
-                size="sm"
-                className="text-blue-400 hover:text-blue-300"
-                title="Manage AWS Connection"
-              >
-                <Settings className="w-4 h-4" />
-              </Button>
-            </div>
-          ) : (
+            <Button
+              onClick={onManage}
+              variant="outline"
+              size="sm"
+              className="text-blue-400 hover:text-blue-300"
+              title="Manage AWS Connection"
+            >
+              <Settings className="w-4 h-4" />
+            </Button>
+          ) : !isComingSoon && (
             <Button
               onClick={onConnect}
               className="flex items-center gap-2"
