@@ -329,33 +329,6 @@ export default function SignIn() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <input
-                id="remember-me"
-                name="remember-me"
-                type="checkbox"
-                className="h-4 w-4 rounded border-gray-600 bg-[#2A2F3A] text-blue-600 focus:ring-blue-500"
-              />
-              <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-300">
-                Remember me
-              </label>
-            </div>
-
-            <div className="text-sm">
-              <Button
-                variant="link"
-                className="text-blue-500 hover:text-blue-400"
-                onClick={(e) => {
-                  e.preventDefault();
-                  // TODO: Implement forgot password
-                }}
-              >
-                Forgot your password?
-              </Button>
-            </div>
-          </div>
-
           <div>
             <Button
               type="submit"
