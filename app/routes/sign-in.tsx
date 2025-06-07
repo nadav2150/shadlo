@@ -230,7 +230,14 @@ export default function SignIn() {
     <div className="min-h-screen flex items-center justify-center bg-[#1A1D24] py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-white">
+          <div className="flex justify-center mb-8">
+            <img
+              src="/logo.svg"
+              alt="Shadow Access Hunter Logo"
+              className="h-36 w-auto"
+            />
+          </div>
+          <h2 className="mt-8 text-center text-3xl font-extrabold text-white">
             Sign in to your account
           </h2>
         </div>

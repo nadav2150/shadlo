@@ -25,10 +25,12 @@ export default function AppSidebar() {
 
   return (
     <div className="flex h-screen w-64 flex-col bg-[#1A1D24] text-white border-r border-gray-800">
-      <div className="flex h-16 items-center justify-center border-b border-gray-800 bg-[#15171D]">
-        <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
-          Shadow Access Hunter
-        </h1>
+      <div className="flex h-32 items-center justify-center border-b border-gray-800 bg-[#15171D]">
+        <img
+          src="/logo.svg"
+          alt="Shadow Access Hunter Logo"
+          className="h-24 w-auto"
+        />
       </div>
 
       <nav className="flex-1 space-y-3 px-4 py-6">
