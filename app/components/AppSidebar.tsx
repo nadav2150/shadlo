@@ -1,37 +1,123 @@
-import { Shield, Cloud } from "lucide-react";
-import { NavLink } from "@remix-run/react";
+import { Link, useLocation, useNavigate } from "@remix-run/react";
+import { cn } from "~/lib/utils";
+import { useState, useEffect } from "react";
+import { auth, signOut } from "~/lib/firebase";
+import { onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
+import { LogOut, User as UserIcon } from "lucide-react";
+import { Button } from "./ui/button";
 
-const navItems = [
-  { name: "Dashboard", to: "/" },
-  { name: "Providers", to: "/providers" },
-  { name: "Permissions", to: "/permissions" },
-  { name: "Users", to: "/users" },
-  { name: "Settings", to: "/settings" },
-];
+export default function AppSidebar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [user, setUser] = useState<FirebaseUser | null>(null);
 
-export function AppSidebar() {
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log("AppSidebar - Auth state changed:", user ? "User logged in" : "No user");
+      setUser(user);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+      // Clear the session cookie
+      document.cookie = "session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
+      navigate("/sign-in");
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
   return (
-    <aside className="bg-[#181C23] text-white w-64 min-h-screen flex flex-col border-r border-gray-800">
-      <div className="flex items-center gap-3 px-6 py-6 border-b border-gray-800">
-        <span className="font-bold text-lg">Shadow Access<br />Hunter</span>
+    <div className="flex h-screen w-64 flex-col bg-[#1A1D24] text-white">
+      <div className="flex h-16 items-center justify-center border-b border-gray-800">
+        <h1 className="text-xl font-bold">Shadow Access Hunter</h1>
       </div>
-      <nav className="flex-1 px-4 py-8">
-        <ul className="space-y-2">
-          {navItems.map((item) => (
-            <li key={item.name}>
-              <NavLink
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex items-center px-4 py-2 rounded-lg transition-colors font-medium hover:bg-gray-800 ${isActive ? "bg-gray-800" : ""}`
-                }
-                end
-              >
-                {item.name}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+
+      <nav className="flex-1 space-y-1 px-2 py-4">
+        <Link
+          to="/"
+          className={cn(
+            "flex items-center px-2 py-2 text-sm font-medium rounded-md",
+            location.pathname === "/"
+              ? "bg-gray-800 text-white"
+              : "text-gray-300 hover:bg-gray-700 hover:text-white"
+          )}
+        >
+          Dashboard
+        </Link>
+        <Link
+          to="/providers"
+          className={cn(
+            "flex items-center px-2 py-2 text-sm font-medium rounded-md",
+            location.pathname === "/providers"
+              ? "bg-gray-800 text-white"
+              : "text-gray-300 hover:bg-gray-700 hover:text-white"
+          )}
+        >
+          Providers
+        </Link>
+        <Link
+          to="/permissions"
+          className={cn(
+            "flex items-center px-2 py-2 text-sm font-medium rounded-md",
+            location.pathname === "/permissions"
+              ? "bg-gray-800 text-white"
+              : "text-gray-300 hover:bg-gray-700 hover:text-white"
+          )}
+        >
+          Permissions
+        </Link>
+        <Link
+          to="/hunts"
+          className={cn(
+            "flex items-center px-2 py-2 text-sm font-medium rounded-md",
+            location.pathname === "/hunts"
+              ? "bg-gray-800 text-white"
+              : "text-gray-300 hover:bg-gray-700 hover:text-white"
+          )}
+        >
+          Hunts
+        </Link>
+        <Link
+          to="/settings"
+          className={cn(
+            "flex items-center px-2 py-2 text-sm font-medium rounded-md",
+            location.pathname === "/settings"
+              ? "bg-gray-800 text-white"
+              : "text-gray-300 hover:bg-gray-700 hover:text-white"
+          )}
+        >
+          Settings
+        </Link>
       </nav>
-    </aside>
+
+      {/* User Info and Sign Out */}
+      {user && (
+        <div className="border-t border-gray-800 p-4">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+              <UserIcon className="w-4 h-4 text-gray-300" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-200 truncate">
+                {user.email}
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            className="w-full justify-start text-gray-300 hover:text-white hover:bg-gray-700"
+            onClick={handleSignOut}
+          >
+            <LogOut className="w-4 h-4 mr-2" />
+            Sign Out
+          </Button>
+        </div>
+      )}
+    </div>
   );
 } 
