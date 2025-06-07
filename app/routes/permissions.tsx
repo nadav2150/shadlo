@@ -622,8 +622,17 @@ export default function Permissions() {
                           <tr className="border-b border-[#23272f] hover:bg-[#1a1f28]/50 transition-colors">
                             <td className="px-6 py-5 whitespace-nowrap">
                               <div className="flex items-center gap-2">
-                                <User className="w-5 h-5 text-blue-400" />
-                                <span className="text-blue-400">User</span>
+                                {entity.type === 'user' ? (
+                                  <>
+                                    <User className="w-5 h-5 text-blue-400" />
+                                    <span className="text-blue-400">User</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Shield className="w-5 h-5 text-purple-400" />
+                                    <span className="text-purple-400">Role</span>
+                                  </>
+                                )}
                               </div>
                             </td>
                             <td className="px-6 py-5 whitespace-nowrap">
