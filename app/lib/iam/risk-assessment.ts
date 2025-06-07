@@ -4,6 +4,9 @@ import { HIGH_RISK_PATTERNS, MEDIUM_RISK_PATTERNS } from './constants';
 interface RiskScore {
   riskLevel: 'low' | 'medium' | 'high' | 'critical';
   score: number;
+  lastUsedScore: number;
+  permissionScore: number;
+  identityScore: number;
   factors: string[];
   shadowPermissions: {
     type: string;
@@ -265,6 +268,9 @@ export function calculateRiskScore(entity: UserDetails | RoleDetails): RiskScore
   return {
     riskLevel,
     score: totalScore,
+    lastUsedScore,
+    permissionScore,
+    identityScore,
     factors,
     shadowPermissions
   };

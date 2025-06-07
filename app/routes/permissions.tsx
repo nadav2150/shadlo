@@ -32,6 +32,9 @@ interface IAMUser {
   riskAssessment?: {
     riskLevel: 'low' | 'medium' | 'high';
     score: number;
+    lastUsedScore: number;
+    permissionScore: number;
+    identityScore: number;
     factors: string[];
     shadowPermissions: {
       type: string;
@@ -54,6 +57,9 @@ interface IAMRole {
   riskAssessment?: {
     riskLevel: 'low' | 'medium' | 'high';
     score: number;
+    lastUsedScore: number;
+    permissionScore: number;
+    identityScore: number;
     factors: string[];
     shadowPermissions: {
       type: string;
@@ -804,8 +810,8 @@ export default function Permissions() {
                                         <div className="p-2 rounded-lg bg-blue-500/10">
                                           <User className="w-4 h-4 text-blue-400" />
                                         </div>
-                                        <h4 className="text-sm font-semibold text-blue-400">
-                                          Activity Score +{entity.riskAssessment?.factors.filter(f => f.includes('No activity') || f.includes('No activity in')).length ? 5 : 0}
+                                        <h4 className="text-sm font-semibold text-white">
+                                          Activity Score {entity.riskAssessment?.lastUsedScore ? <span className="text-red-400">+{entity.riskAssessment.lastUsedScore}</span> : ''}
                                         </h4>
                                       </div>
                                       <div className="space-y-2">
@@ -832,8 +838,8 @@ export default function Permissions() {
                                         <div className="p-2 rounded-lg bg-purple-500/10">
                                           <Key className="w-4 h-4 text-purple-400" />
                                         </div>
-                                        <h4 className="text-sm font-semibold text-purple-400">
-                                          Permission Score +{entity.riskAssessment?.factors.filter(f => f.includes('full access permissions') || f.includes('Has write/modify permissions')).length ? 5 : 0}
+                                        <h4 className="text-sm font-semibold text-white">
+                                          Permission Score {entity.riskAssessment?.permissionScore ? <span className="text-red-400">+{entity.riskAssessment.permissionScore}</span> : ''}
                                         </h4>
                                       </div>
                                       <div className="space-y-2">
@@ -856,8 +862,8 @@ export default function Permissions() {
                                         <div className="p-2 rounded-lg bg-green-500/10">
                                           <Shield className="w-4 h-4 text-green-400" />
                                         </div>
-                                        <h4 className="text-sm font-semibold text-red-400">
-                                          Identity Context +{entity.riskAssessment?.score ? Math.min(5, Math.max(0, entity.riskAssessment.score - (entity.riskAssessment.factors.filter(f => f.includes('activity')).length ? 5 : 0) - (entity.riskAssessment.factors.filter(f => f.includes('permission')).length ? 5 : 0))) : 0}
+                                        <h4 className="text-sm font-semibold text-white">
+                                          Identity Context {entity.riskAssessment?.identityScore ? <span className="text-red-400">+{entity.riskAssessment.identityScore}</span> : ''}
                                         </h4>
                                       </div>
                                       <div className="space-y-2">
