@@ -4,8 +4,10 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLocation,
 } from "@remix-run/react";
 import type { LinksFunction } from "@remix-run/node";
+import { cn } from "~/lib/utils";
 
 import "./tailwind.css";
 import { AppSidebar } from "~/components/AppSidebar";
@@ -24,6 +26,9 @@ export const links: LinksFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  const isSignInPage = location.pathname === "/sign-in";
+
   return (
     <html lang="en">
       <head>
@@ -33,9 +38,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        <div className="flex min-h-screen bg-[#10131A]">
-          <AppSidebar />
-          <div className="flex-1">
+        <div className={cn(
+          "min-h-screen bg-[#10131A]",
+          !isSignInPage && "flex"
+        )}>
+          {!isSignInPage && <AppSidebar />}
+          <div className={cn(
+            !isSignInPage && "flex-1"
+          )}>
             {children}
           </div>
         </div>
