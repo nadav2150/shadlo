@@ -1,35 +1,12 @@
-import { Link, useLocation, useNavigate } from "@remix-run/react";
+import { Link, useLocation, useLoaderData } from "@remix-run/react";
 import { cn } from "~/lib/utils";
-import { useState, useEffect } from "react";
-import { auth, signOut } from "~/lib/firebase";
-import { onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
 import { LogOut, User as UserIcon } from "lucide-react";
 import { Button } from "./ui/button";
+import type { loader as rootLoader } from "~/root";
 
 export default function AppSidebar() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const [user, setUser] = useState<FirebaseUser | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log("AppSidebar - Auth state changed:", user ? "User logged in" : "No user");
-      setUser(user);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      // Clear the session cookie
-      document.cookie = "session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;";
-      navigate("/sign-in");
-    } catch (error) {
-      console.error("Error signing out:", error);
-    }
-  };
+  const { user } = useLoaderData<typeof rootLoader>();
 
   return (
     <div className="flex h-screen w-64 flex-col bg-[#1A1D24] text-white">
@@ -108,14 +85,24 @@ export default function AppSidebar() {
               </p>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-gray-300 hover:text-white hover:bg-gray-700"
-            onClick={handleSignOut}
+          <Link
+            to="/sign-out"
+            className="w-full"
+            onClick={(e) => {
+              // Clear any client-side storage
+              localStorage.clear();
+              sessionStorage.clear();
+            }}
           >
-            <LogOut className="w-4 h-4 mr-2" />
-            Sign Out
-          </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-start text-gray-300 hover:text-white hover:bg-gray-700"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sign Out
+            </Button>
+          </Link>
         </div>
       )}
     </div>

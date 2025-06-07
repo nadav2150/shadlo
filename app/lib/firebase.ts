@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
   setPersistence,
   browserLocalPersistence,
+  sendEmailVerification,
   type User
 } from "firebase/auth";
 
@@ -23,20 +24,40 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
-// Set persistence to LOCAL
-setPersistence(auth, browserLocalPersistence)
-  .then(() => {
-    console.log("Firebase persistence set to LOCAL");
-  })
-  .catch((error) => {
-    console.error("Error setting persistence:", error);
-  });
+// Initialize auth persistence
+const initAuth = async () => {
+  try {
+    await setPersistence(auth, browserLocalPersistence);
+    console.log("Firebase auth persistence initialized successfully");
+    
+    // Check current user after persistence is set
+    const currentUser = auth.currentUser;
+    console.log("Current user after persistence init:", currentUser ? {
+      email: currentUser.email,
+      emailVerified: currentUser.emailVerified,
+      uid: currentUser.uid
+    } : "No current user");
+
+    // Set up auth state listener
+    onAuthStateChanged(auth, (user) => {
+      console.log("Auth state changed after persistence init:", user ? {
+        email: user.email,
+        emailVerified: user.emailVerified,
+        uid: user.uid
+      } : "No user");
+    });
+  } catch (error) {
+    console.error("Error initializing Firebase auth persistence:", error);
+  }
+};
+
+// Initialize auth immediately
+initAuth();
 
 // Helper function to get current user
-export function getCurrentUser(): Promise<User | null> {
+export async function getCurrentUser(): Promise<User | null> {
   return new Promise((resolve) => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log("Current auth state:", user ? "User logged in" : "No user");
       unsubscribe();
       resolve(user);
     });
@@ -46,7 +67,17 @@ export function getCurrentUser(): Promise<User | null> {
 // Helper function to check if user is authenticated
 export async function isAuthenticated(): Promise<boolean> {
   const user = await getCurrentUser();
+  console.log("isAuthenticated check:", user ? {
+    email: user.email,
+    emailVerified: user.emailVerified,
+    uid: user.uid
+  } : "No user");
   return !!user;
 }
 
-export { auth, signInWithEmailAndPassword, signOut }; 
+export { 
+  auth, 
+  signInWithEmailAndPassword, 
+  signOut,
+  sendEmailVerification 
+}; 
