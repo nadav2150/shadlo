@@ -14,18 +14,14 @@ import {
 import { Button } from "~/components/ui";
 import { Modal } from "~/components/ui/modal";
 import { AwsCredentialsForm } from "~/components/AwsCredentialsForm";
-import { GSuiteCredentialsForm } from "~/components/GSuiteCredentialsForm";
-import { getAwsCredentials, setAwsCredentials, clearAwsCredentials, getGSuiteCredentials } from "~/utils/session.server";
-import { validateGSuiteCredentials, setGSuiteCredentials, clearGSuiteCredentials } from "~/utils/gsuite.server";
+import { getAwsCredentials, setAwsCredentials, clearAwsCredentials } from "~/utils/session.server";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 
 export const loader: LoaderFunction = async ({ request }) => {
   const awsCredentials = await getAwsCredentials(request);
-  const gsuiteCredentials = await getGSuiteCredentials(request);
   return json({ 
     credentials: {
-      aws: awsCredentials,
-      gsuite: gsuiteCredentials
+      aws: awsCredentials
     }
   });
 };
@@ -63,15 +59,6 @@ export const action: ActionFunction = async ({ request }) => {
   const intent = formData.get("intent")?.toString();
   const provider = formData.get("provider")?.toString()?.toLowerCase();
 
-  // Debug logs
-  console.log("Action received request with:", {
-    intent,
-    provider,
-    clientId: formData.get("clientId"),
-    clientSecret: formData.get("clientSecret"),
-    allFormData: Object.fromEntries(formData.entries())
-  });
-
   if (!provider) {
     return json(
       { error: "Provider is required" },
@@ -88,22 +75,6 @@ export const action: ActionFunction = async ({ request }) => {
         {
           headers: cookieHeader ? {
             "Set-Cookie": cookieHeader
-          } : undefined
-        }
-      );
-    } else if (provider === "gsuite") {
-      const result = await clearGSuiteCredentials(request);
-      if (!result.success) {
-        return json(
-          { error: result.message },
-          { status: 500 }
-        );
-      }
-      return json(
-        { success: true, message: "G Suite credentials disconnected successfully" },
-        {
-          headers: result.cookieHeader ? {
-            "Set-Cookie": result.cookieHeader
           } : undefined
         }
       );
@@ -162,55 +133,6 @@ export const action: ActionFunction = async ({ request }) => {
         { status: 500 }
       );
     }
-  } else if (provider === "gsuite") {
-    const clientId = formData.get("clientId")?.toString();
-    const clientSecret = formData.get("clientSecret")?.toString();
-
-    if (!clientId || !clientSecret) {
-      return json(
-        { error: "Client ID and Client Secret are required" },
-        { status: 400 }
-      );
-    }
-
-    try {
-      const validationResult = await validateGSuiteCredentials(clientId, clientSecret);
-      if (!validationResult.isValid) {
-        return json(
-          { error: validationResult.error },
-          { status: 400 }
-        );
-      }
-
-      // Store the credentials in session
-      const result = await setGSuiteCredentials(request, {
-        clientId,
-        clientSecret
-      });
-
-      if (!result.success) {
-        throw new Error(result.message);
-      }
-
-      return json(
-        {
-          success: true,
-          authUrl: validationResult.authUrl,
-          message: validationResult.message
-        },
-        {
-          headers: result.cookieHeader ? {
-            "Set-Cookie": result.cookieHeader
-          } : undefined
-        }
-      );
-    } catch (error) {
-      console.error("Error validating G Suite credentials:", error);
-      return json(
-        { error: "Failed to validate credentials. Please try again." },
-        { status: 500 }
-      );
-    }
   }
 
   return json(
@@ -249,58 +171,100 @@ function ProviderCard({
   return (
     <div className="bg-white/5 border border-white/10 rounded-lg p-6 hover:border-white/20 transition-colors">
       <div className="flex items-start justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center space-x-4">
           <div className="p-2 bg-white/5 rounded-lg">
             {icon}
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-white">{name}</h3>
-              {isComingSoon ? (
-                <span className="px-2 py-0.5 text-xs font-medium bg-purple-500/20 text-purple-400 rounded-full">
-                  Coming Soon
-                </span>
-              ) : isConnected && (
-                <span className="px-2 py-0.5 text-xs font-medium bg-green-500/20 text-green-400 rounded-full">
-                  Connected
-                </span>
-              )}
-            </div>
-            <p className="text-gray-400 mt-1">{description}</p>
-            {isConnected && accountDetails?.accountId && (
-              <div className="mt-2 text-sm text-gray-400">
-                <p>Account ID: {accountDetails.accountId}</p>
-                {accountDetails.arn && (
-                  <p className="truncate max-w-[200px]" title={accountDetails.arn}>
-                    ARN: {accountDetails.arn}
-                  </p>
-                )}
-              </div>
-            )}
+            <h3 className="text-lg font-medium text-white">{name}</h3>
+            <p className="text-sm text-white/60 mt-1">{description}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {isConnected ? (
-            <Button
-              onClick={onManage}
-              variant="outline"
-              size="sm"
-              className="text-blue-400 hover:text-blue-300"
-              title="Manage AWS Connection"
-            >
-              <Settings className="w-4 h-4" />
-            </Button>
-          ) : !isComingSoon && (
-            <Button
-              onClick={onConnect}
-              className="flex items-center gap-2"
-            >
-              Connect
-              <ArrowRight className="w-4 h-4" />
-            </Button>
+        {isConnected ? (
+          <div className="flex items-center space-x-2">
+            <span className="flex items-center text-sm text-green-400">
+              <CheckCircle2 className="w-4 h-4 mr-1" />
+              Connected
+            </span>
+            {onManage && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onManage}
+                className="text-white/60 hover:text-white"
+              >
+                <Settings className="w-4 h-4" />
+              </Button>
+            )}
+            {onDisconnect && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDisconnectConfirm(true)}
+                className="text-white/60 hover:text-white"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onConnect}
+            disabled={isComingSoon}
+            className={isComingSoon ? "opacity-50 cursor-not-allowed" : ""}
+          >
+            {isComingSoon ? "Coming Soon" : "Connect"}
+            {!isComingSoon && <ArrowRight className="w-4 h-4 ml-2" />}
+          </Button>
+        )}
+      </div>
+
+      {isConnected && accountDetails && (
+        <div className="mt-4 pt-4 border-t border-white/10">
+          {accountDetails.accountId && (
+            <p className="text-sm text-white/60">
+              Account ID: <span className="text-white">{accountDetails.accountId}</span>
+            </p>
+          )}
+          {accountDetails.arn && (
+            <p className="text-sm text-white/60 mt-1">
+              ARN: <span className="text-white">{accountDetails.arn}</span>
+            </p>
           )}
         </div>
-      </div>
+      )}
+
+      <Modal
+        isOpen={showDisconnectConfirm}
+        onClose={() => setShowDisconnectConfirm(false)}
+        title={`Disconnect ${name}`}
+      >
+        <div className="p-6">
+          <p className="text-white/80 mb-4">
+            Are you sure you want to disconnect {name}? This will remove all associated credentials.
+          </p>
+          <div className="flex justify-end space-x-3">
+            <Button
+              variant="outline"
+              onClick={() => setShowDisconnectConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              className="text-red-400 hover:text-red-300 hover:bg-red-400/10"
+              onClick={() => {
+                onDisconnect?.();
+                setShowDisconnectConfirm(false);
+              }}
+            >
+              Disconnect
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -308,66 +272,60 @@ function ProviderCard({
 export default function ProvidersPage() {
   const { credentials } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
-  const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "gsuite" | null>(null);
-  const [isManaging, setIsManaging] = useState(false);
+  const navigation = useNavigation();
+  const [showModal, setShowModal] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta">("aws");
 
-  const handleConnect = (provider: "aws" | "azure" | "okta" | "gsuite") => {
+  const handleConnect = (provider: "aws" | "azure" | "okta") => {
     setSelectedProvider(provider);
-    setIsManaging(false);
+    setShowModal(true);
   };
 
-  const handleManage = (provider: "aws" | "azure" | "okta" | "gsuite") => {
+  const handleManage = (provider: "aws" | "azure" | "okta") => {
     setSelectedProvider(provider);
-    setIsManaging(true);
+    setShowModal(true);
   };
 
   const handleDisconnect = async () => {
     const formData = new FormData();
     formData.append("intent", "disconnect");
+    formData.append("provider", selectedProvider);
     
-    const response = await fetch("/providers", {
-      method: "POST",
-      body: formData,
-    });
-
-    if (response.ok) {
+    try {
+      const response = await fetch("/providers", {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to disconnect provider");
+      }
+      
       window.location.reload();
+    } catch (error) {
+      console.error("Error disconnecting provider:", error);
     }
   };
 
   const handleClose = () => {
-    setSelectedProvider(null);
-    setIsManaging(false);
+    setShowModal(false);
   };
 
   const handleSuccess = () => {
-    setSelectedProvider(null);
-    setIsManaging(false);
+    setShowModal(false);
     window.location.reload();
   };
 
   return (
-    <div className="space-y-8">
-      {/* Header Section */}
-      <div className="bg-gradient-to-r from-blue-600/10 to-purple-600/10 rounded-xl p-6 border border-gray-800">
-        <h1 className="text-3xl font-bold text-white mb-2">Cloud Providers</h1>
-        <p className="text-gray-300 text-lg">
-          Monitor and manage your cloud security posture across all platforms
-        </p>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-2xl font-bold text-white mb-8">Identity Providers</h1>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <ProviderCard
           name="AWS"
-          description="Connect your AWS account to manage IAM permissions and access."
-          icon={
-            <img 
-              src="/amazon-aws.svg" 
-              alt="AWS"
-              className="w-12 invert brightness-0"
-            />
-          }
-          isConnected={!!credentials.aws?.accessKeyId}
+          description="Connect your AWS account to manage IAM users and roles"
+          icon={<Cloud className="w-6 h-6 text-blue-400" />}
+          isConnected={!!credentials.aws}
           onConnect={() => handleConnect("aws")}
           onManage={() => handleManage("aws")}
           onDisconnect={handleDisconnect}
@@ -376,77 +334,34 @@ export default function ProvidersPage() {
             arn: credentials.aws.arn
           } : undefined}
         />
+
         <ProviderCard
           name="Azure"
-          description="Connect your Azure account to manage role assignments and access."
-          icon={
-            <img 
-              src="/microsoft-azure.svg" 
-              alt="Azure"
-              className="w-12 invert brightness-0"
-            />
-          }
+          description="Connect your Azure AD to manage users and groups"
+          icon={<Shield className="w-6 h-6 text-blue-500" />}
           isConnected={false}
           onConnect={() => handleConnect("azure")}
         />
+
         <ProviderCard
           name="Okta"
-          description="Connect your Okta organization to manage user access and groups."
-          icon={
-            <img 
-              src="/okta.svg" 
-              alt="Okta"
-              className="w-12 invert brightness-0"
-            />
-          }
+          description="Connect your Okta organization to manage users and groups"
+          icon={<Key className="w-6 h-6 text-purple-400" />}
           isConnected={false}
           onConnect={() => handleConnect("okta")}
-        />
-        <ProviderCard
-          name="G Suite"
-          description="Connect your Google Workspace to manage user permissions and security settings."
-          icon={
-            <img 
-              src="/google-workspace.svg" 
-              alt="G Suite"
-              className="w-16 invert brightness-0"
-            />
-          }
-          isConnected={!!credentials.gsuite?.clientId}
-          onConnect={() => handleConnect("gsuite")}
-          onManage={() => handleManage("gsuite")}
-          onDisconnect={handleDisconnect}
         />
       </div>
 
       <Modal
-        isOpen={!!selectedProvider}
+        isOpen={showModal}
         onClose={handleClose}
-        title={isManaging ? `Manage ${selectedProvider?.toUpperCase()}` : `Connect ${selectedProvider?.toUpperCase()}`}
+        title={credentials[selectedProvider] ? `Manage ${selectedProvider.toUpperCase()}` : `Connect ${selectedProvider.toUpperCase()}`}
       >
         {selectedProvider === "aws" && (
           <AwsCredentialsForm
             onSuccess={handleSuccess}
             onCancel={handleClose}
-            initialCredentials={isManaging ? credentials.aws : undefined}
-            onDisconnect={handleDisconnect}
-          />
-        )}
-        {selectedProvider === "azure" && (
-          <div className="p-4 text-center text-gray-400">
-            Azure integration coming soon...
-          </div>
-        )}
-        {selectedProvider === "okta" && (
-          <div className="p-4 text-center text-gray-400">
-            Okta integration coming soon...
-          </div>
-        )}
-        {selectedProvider === "gsuite" && (
-          <GSuiteCredentialsForm
-            onSuccess={handleSuccess}
-            onCancel={handleClose}
-            initialCredentials={isManaging ? credentials.gsuite : undefined}
+            initialCredentials={credentials.aws}
             onDisconnect={handleDisconnect}
           />
         )}
