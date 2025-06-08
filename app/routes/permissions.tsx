@@ -764,7 +764,20 @@ export default function Permissions() {
                                   ) : (
                                     <Shield className="w-5 h-5 text-gray-400" />
                                   )}
-                                  <span className="font-medium text-white">{entityName}</span>
+                                  <a 
+                                    href={entity.provider === 'google' 
+                                      ? 'https://admin.google.com/ac/users'
+                                      : entity.type === 'role'
+                                        ? `https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/roles/${entityName}`
+                                        : `https://console.aws.amazon.com/iam/home?region=us-east-1#/users/${entityName}`
+                                    }
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-medium text-white hover:text-blue-400 flex items-center gap-1"
+                                  >
+                                    {entityName}
+                                    <ExternalLink className="w-4 h-4" />
+                                  </a>
                                 </div>
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
