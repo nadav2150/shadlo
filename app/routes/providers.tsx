@@ -211,15 +211,15 @@ function ProviderCard({
 export default function ProvidersPage() {
   const { credentials } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
-  const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "gsuite" | null>(null);
   const [isManaging, setIsManaging] = useState(false);
 
-  const handleConnect = (provider: "aws" | "azure" | "okta") => {
+  const handleConnect = (provider: "aws" | "azure" | "okta" | "gsuite") => {
     setSelectedProvider(provider);
     setIsManaging(false);
   };
 
-  const handleManage = (provider: "aws" | "azure" | "okta") => {
+  const handleManage = (provider: "aws" | "azure" | "okta" | "gsuite") => {
     setSelectedProvider(provider);
     setIsManaging(true);
   };
@@ -305,6 +305,19 @@ export default function ProvidersPage() {
           isConnected={false}
           onConnect={() => handleConnect("okta")}
         />
+        <ProviderCard
+          name="G Suite"
+          description="Connect your Google Workspace to manage user permissions and security settings."
+          icon={
+            <img 
+              src="/google-workspace.svg" 
+              alt="G Suite"
+              className="w-16 invert brightness-0"
+            />
+          }
+          isConnected={false}
+          onConnect={() => handleConnect("gsuite")}
+        />
       </div>
 
       <Modal
@@ -328,6 +341,11 @@ export default function ProvidersPage() {
         {selectedProvider === "okta" && (
           <div className="p-4 text-center text-gray-400">
             Okta integration coming soon...
+          </div>
+        )}
+        {selectedProvider === "gsuite" && (
+          <div className="p-4 text-center text-gray-400">
+            Google Workspace integration coming soon...
           </div>
         )}
       </Modal>
