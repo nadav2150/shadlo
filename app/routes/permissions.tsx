@@ -385,8 +385,9 @@ export default function Permissions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+  const [providerFilter, setProviderFilter] = useState<"all" | "aws" | "google">("all");
+  const [sortField, setSortField] = useState<SortField>('created');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
   // Check which providers are connected
   const isAwsConnected = !!credentials?.accessKeyId;
@@ -419,82 +420,107 @@ export default function Permissions() {
     }
   };
 
-  // Combine users and roles into a single array for filtering and sorting
+  // Filter and sort entities
   const allEntities = useMemo(() => {
-    const combined = [
-      ...users.map(user => ({ ...user, type: 'user' as const })),
-      ...roles.map(role => ({ ...role, type: 'role' as const }))
-    ];
+    let filtered = [...users, ...roles];
 
-    // First filter
-    const filtered = combined.filter(entity => {
-      // Search filter
-      const searchLower = searchQuery.toLowerCase();
-      const entityName = entity.type === 'user' 
-        ? (entity as IAMUser).userName 
-        : (entity as IAMRole).roleName;
-      
-      const matchesSearch = searchQuery === "" || 
-        (entityName?.toLowerCase() || '').includes(searchLower);
+    // Apply search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(entity => {
+        const name = entity.type === 'user' 
+          ? getUserDisplayName(entity as IAMUser | GoogleUser)
+          : (entity as IAMRole).roleName;
+        return name.toLowerCase().includes(query);
+      });
+    }
 
-      // Type filter
-      const matchesType = typeFilter === "all" || entity.type === typeFilter;
+    // Apply type filter
+    if (typeFilter !== 'all') {
+      filtered = filtered.filter(entity => entity.type === typeFilter);
+    }
 
-      // Risk filter
-      const matchesRisk = riskFilter === "all" || 
-        entity.riskAssessment?.riskLevel === riskFilter;
+    // Apply risk filter
+    if (riskFilter !== 'all') {
+      filtered = filtered.filter(entity => entity.riskAssessment?.riskLevel === riskFilter);
+    }
 
-      return matchesSearch && matchesType && matchesRisk;
-    });
+    // Apply provider filter
+    if (providerFilter !== 'all') {
+      filtered = filtered.filter(entity => entity.provider === providerFilter);
+    }
 
-    // Then sort
+    // Sort entities
     return filtered.sort((a, b) => {
-      const modifier = sortDirection === 'asc' ? 1 : -1;
-      
+      let aValue: any;
+      let bValue: any;
+
       switch (sortField) {
-        case 'type':
-          return modifier * (a.type.localeCompare(b.type));
-        case 'provider':
-          return modifier * (a.provider.localeCompare(b.provider));
         case 'name':
-          const aName = a.type === 'user' ? (a as IAMUser).userName : (a as IAMRole).roleName;
-          const bName = b.type === 'user' ? (b as IAMUser).userName : (b as IAMRole).roleName;
-          return modifier * ((aName || '').localeCompare(bName || ''));
+          aValue = a.type === 'user' ? getUserDisplayName(a as IAMUser | GoogleUser) : (a as IAMRole).roleName;
+          bValue = b.type === 'user' ? getUserDisplayName(b as IAMUser | GoogleUser) : (b as IAMRole).roleName;
+          break;
         case 'created':
-          const aDate = a.createDate ? new Date(a.createDate).getTime() : 0;
-          const bDate = b.createDate ? new Date(b.createDate).getTime() : 0;
-          return modifier * (aDate - bDate);
+          aValue = a.createDate;
+          bValue = b.createDate;
+          break;
         case 'lastUsed':
-          const aLastUsed = a.lastUsed ? new Date(a.lastUsed).getTime() : 0;
-          const bLastUsed = b.lastUsed ? new Date(b.lastUsed).getTime() : 0;
-          return modifier * (aLastUsed - bLastUsed);
+          aValue = a.lastUsed;
+          bValue = b.lastUsed;
+          break;
         case 'mfa':
           if (a.type === 'user' && b.type === 'user') {
-            const aMFA = (a as IAMUser).hasMFA;
-            const bMFA = (b as IAMUser).hasMFA;
-            if (aMFA === bMFA) return 0;
-            return modifier * (aMFA ? 1 : -1);
-          } else if (a.type === 'user') {
-            return modifier * -1;
-          } else if (b.type === 'user') {
-            return modifier * 1;
+            aValue = (a as IAMUser).hasMFA;
+            bValue = (b as IAMUser).hasMFA;
           } else {
             return 0;
           }
+          break;
         case 'risk':
-          const aRisk = a.riskAssessment?.riskLevel || 'low';
-          const bRisk = b.riskAssessment?.riskLevel || 'low';
-          const riskOrder = { low: 0, medium: 1, high: 2, critical: 3 };
-          return modifier * (riskOrder[aRisk] - riskOrder[bRisk]);
+          aValue = a.riskAssessment?.riskLevel || 'low';
+          bValue = b.riskAssessment?.riskLevel || 'low';
+          break;
         case 'policies':
-          const aPolicies = a.policies?.length || 0;
-          const bPolicies = b.policies?.length || 0;
-          return modifier * (aPolicies - bPolicies);
+          aValue = a.policies?.length || 0;
+          bValue = b.policies?.length || 0;
+          break;
+        case 'type':
+          aValue = a.type;
+          bValue = b.type;
+          break;
+        case 'provider':
+          aValue = a.provider;
+          bValue = b.provider;
+          break;
         default:
           return 0;
       }
+
+      if (sortField === 'created' || sortField === 'lastUsed') {
+        const aDate = aValue ? new Date(aValue).getTime() : 0;
+        const bDate = bValue ? new Date(bValue).getTime() : 0;
+        return sortDirection === 'asc' ? aDate - bDate : bDate - aDate;
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortDirection === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      }
+
+      if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
+        return sortDirection === 'asc' 
+          ? (aValue === bValue ? 0 : aValue ? 1 : -1)
+          : (aValue === bValue ? 0 : aValue ? -1 : 1);
+      }
+
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+      }
+
+      return 0;
     });
-  }, [users, roles, searchQuery, typeFilter, riskFilter, sortField, sortDirection]);
+  }, [users, roles, searchQuery, typeFilter, riskFilter, providerFilter, sortField, sortDirection]);
 
   // Calculate total access keys safely
   const totalAccessKeys = users?.reduce((acc, user) => {
@@ -539,248 +565,203 @@ export default function Permissions() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0f1117]">
-      {/* Header Section */}
-      <div className="px-8 py-6 border-b border-gray-800">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold text-white">Permissions Management</h1>
-          <p className="text-gray-400">
-            View and manage user permissions across your connected identity providers
-          </p>
-        </div>
-      </div>
-
-      {/* Connection Status */}
-      <ConnectionStatus />
-
-      {/* Stats Cards */}
-      <div className="flex-none px-8">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8 mb-6">
-          <div className="bg-white/5 border border-gray-800 rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
-            <div className="mb-4">
-              <span className="text-lg font-semibold text-white">Total Entities</span>
-            </div>
-            <div className="text-2xl font-extrabold text-white mb-1">
-              {hasConnectedProviders ? `${totalEntities} entities` : 'N/A'}
-            </div>
-          </div>
-          <div className="bg-white/5 border border-gray-800 rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
-            <div className="mb-4">
-              <span className="text-lg font-semibold text-white">Users</span>
-            </div>
-            <div className="text-2xl font-extrabold text-white mb-1">
-              {hasConnectedProviders ? `${users?.length || 0} users` : 'N/A'}
-            </div>
-          </div>
-          <div className="bg-white/5 border border-gray-800 rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
-            <div className="mb-4">
-              <span className="text-lg font-semibold text-white">Roles</span>
-            </div>
-            <div className="text-2xl font-extrabold text-white mb-1">
-              {hasConnectedProviders ? `${roles?.length || 0} roles` : 'N/A'}
-            </div>
-          </div>
-          <div className="bg-white/5 border border-gray-800 rounded-xl px-8 py-8 flex flex-col justify-center w-full min-h-[140px]">
-            <div className="mb-4">
-              <span className="text-lg font-semibold text-white">API Keys</span>
-            </div>
-            <div className="text-2xl font-extrabold text-white mb-1">
-              {hasConnectedProviders ? `${totalAccessKeys} active keys` : 'N/A'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Table Section */}
-      <div className="flex-1 px-8 pb-8 min-h-0">
-        <div className="h-full flex flex-col">
-          <div className="flex-none mb-4">
-            <h2 className="text-2xl font-bold text-white">
-              {hasConnectedProviders ? 'Identity Entities' : 'No Providers Connected'}
-            </h2>
+    <div className="min-h-screen bg-[#0f1117] text-white">
+      <div className="container mx-auto px-4 py-8">
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <h1 className="text-2xl font-bold">Permissions</h1>
+            <ConnectionStatus />
           </div>
 
-          {/* Only show search and filters if we have connected providers */}
-          {hasConnectedProviders && (
-            <>
-              {/* Search and Filter Controls */}
-              <div className="flex-none mb-4 flex flex-wrap gap-4">
-                {/* Search Bar */}
-                <div className="relative flex-1 min-w-[200px]">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="h-5 w-5 text-gray-400" />
-                  </div>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search by name..."
-                    className="w-full pl-10 pr-4 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-
-                {/* Type Filter */}
-                <div className="relative">
-                  <select
-                    value={typeFilter}
-                    onChange={(e) => setTypeFilter(e.target.value as typeof typeFilter)}
-                    className="appearance-none pl-4 pr-10 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="user">Users</option>
-                    <option value="role">Roles</option>
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <Filter className="h-5 w-5 text-gray-400" />
-                  </div>
-                </div>
-
-                {/* Risk Level Filter */}
-                <div className="relative">
-                  <select
-                    value={riskFilter}
-                    onChange={(e) => setRiskFilter(e.target.value as typeof riskFilter)}
-                    className="appearance-none pl-4 pr-10 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="all">All Risk Levels</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
-                  </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <Filter className="h-5 w-5 text-gray-400" />
-                  </div>
-                </div>
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white/5 border border-gray-800 rounded-xl px-6 py-6 flex flex-col justify-center">
+              <div className="mb-2">
+                <span className="text-lg font-semibold text-white">Total Entities</span>
               </div>
+              <div className="text-2xl font-extrabold text-white">
+                {hasConnectedProviders ? `${totalEntities} entities` : 'N/A'}
+              </div>
+            </div>
+            <div className="bg-white/5 border border-gray-800 rounded-xl px-6 py-6 flex flex-col justify-center">
+              <div className="mb-2">
+                <span className="text-lg font-semibold text-white">Users</span>
+              </div>
+              <div className="text-2xl font-extrabold text-white">
+                {hasConnectedProviders ? `${users?.length || 0} users` : 'N/A'}
+              </div>
+            </div>
+            <div className="bg-white/5 border border-gray-800 rounded-xl px-6 py-6 flex flex-col justify-center">
+              <div className="mb-2">
+                <span className="text-lg font-semibold text-white">Roles</span>
+              </div>
+              <div className="text-2xl font-extrabold text-white">
+                {hasConnectedProviders ? `${roles?.length || 0} roles` : 'N/A'}
+              </div>
+            </div>
+            <div className="bg-white/5 border border-gray-800 rounded-xl px-6 py-6 flex flex-col justify-center">
+              <div className="mb-2">
+                <span className="text-lg font-semibold text-white">API Keys</span>
+              </div>
+              <div className="text-2xl font-extrabold text-white">
+                {hasConnectedProviders ? `${totalAccessKeys} active keys` : 'N/A'}
+              </div>
+            </div>
+          </div>
 
-              {/* Table */}
-              <div className="flex-1 overflow-auto">
-                <table className="w-full">
-                  <thead className="sticky top-0 z-10 text-lg text-blue-300 uppercase bg-[#1a1f28]">
-                    <tr>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('type')}
-                      >
-                        <div className="flex items-center">
-                          Type
-                          <SortIndicator field="type" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('provider')}
-                      >
-                        <div className="flex items-center">
-                          Provider
-                          <SortIndicator field="provider" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('name')}
-                      >
-                        <div className="flex items-center">
-                          Name
-                          <SortIndicator field="name" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('created')}
-                      >
-                        <div className="flex items-center">
-                          Created
-                          <SortIndicator field="created" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('lastUsed')}
-                      >
-                        <div className="flex items-center">
-                          Last Used
-                          <SortIndicator field="lastUsed" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('mfa')}
-                      >
-                        <div className="flex items-center">
-                          MFA
-                          <SortIndicator field="mfa" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('risk')}
-                      >
-                        <div className="flex items-center">
-                          Risk Level
-                          <SortIndicator field="risk" />
-                        </div>
-                      </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                        onClick={() => handleSort('policies')}
-                      >
-                        <div className="flex items-center">
-                          Policies
-                          <SortIndicator field="policies" />
-                        </div>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {error ? (
+          {/* Filters */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search users and roles..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+
+            {/* Type Filter */}
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as "all" | "user" | "role")}
+              className="px-4 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">All Types</option>
+              <option value="user">Users</option>
+              <option value="role">Roles</option>
+            </select>
+
+            {/* Risk Filter */}
+            <select
+              value={riskFilter}
+              onChange={(e) => setRiskFilter(e.target.value as "all" | "low" | "medium" | "high" | "critical")}
+              className="px-4 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">All Risk Levels</option>
+              <option value="low">Low Risk</option>
+              <option value="medium">Medium Risk</option>
+              <option value="high">High Risk</option>
+              <option value="critical">Critical Risk</option>
+            </select>
+
+            {/* Provider Filter */}
+            <select
+              value={providerFilter}
+              onChange={(e) => setProviderFilter(e.target.value as "all" | "aws" | "google")}
+              className="px-4 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="all">All Providers</option>
+              {isAwsConnected && <option value="aws">AWS</option>}
+              {isGoogleConnected && <option value="google">Google</option>}
+            </select>
+          </div>
+
+          {/* Table Section */}
+          <div className="bg-[#1a1f28] border border-[#23272f] rounded-lg overflow-hidden">
+            <div className="px-5 py-4 border-b border-[#23272f]">
+              <h2 className="text-xl font-semibold text-white">
+                {hasConnectedProviders ? 'Identity Entities' : 'No Providers Connected'}
+              </h2>
+            </div>
+
+            {/* Only show table if we have connected providers */}
+            {hasConnectedProviders && (
+              <div className="relative h-[calc(100vh-400px)] min-h-[500px]">
+                <div className="absolute inset-0 overflow-auto">
+                  <table className="w-full text-base">
+                    <thead className="sticky top-0 z-10 text-sm text-blue-300 uppercase bg-[#1a1f28] shadow-sm">
                       <tr>
-                        <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
-                          <div className="flex flex-col items-center gap-2">
-                            <AlertTriangle className="w-8 h-8 text-red-500" />
-                            <span>{error}</span>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28]">Name</th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28]">Type</th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28]">Provider</th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28] cursor-pointer" onClick={() => handleSort('created')}>
+                          <div className="flex items-center gap-1">
+                            Created
+                            {sortField === 'created' && (
+                              <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                            )}
                           </div>
-                        </td>
+                        </th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28] cursor-pointer" onClick={() => handleSort('lastUsed')}>
+                          <div className="flex items-center gap-1">
+                            Last Used
+                            {sortField === 'lastUsed' && (
+                              <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28] cursor-pointer" onClick={() => handleSort('mfa')}>
+                          <div className="flex items-center gap-1">
+                            MFA
+                            {sortField === 'mfa' && (
+                              <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28] cursor-pointer" onClick={() => handleSort('risk')}>
+                          <div className="flex items-center gap-1">
+                            Risk Level
+                            {sortField === 'risk' && (
+                              <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28] cursor-pointer" onClick={() => handleSort('policies')}>
+                          <div className="flex items-center gap-1">
+                            Policies
+                            {sortField === 'policies' && (
+                              <span>{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                            )}
+                          </div>
+                        </th>
                       </tr>
-                    ) : allEntities.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
-                          No entities found
-                        </td>
-                      </tr>
-                    ) : (
-                      allEntities.map((entity, index) => {
-                        const riskInfo = getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low');
-                        const RiskIcon = riskInfo.icon;
-                        const providerInfo = getProviderInfo(entity.provider);
-                        const ProviderIcon = providerInfo.icon;
-                        const entityId = entity.type === 'user' 
-                          ? getUserDisplayName(entity as IAMUser | GoogleUser)
-                          : (entity as IAMRole).roleName;
+                    </thead>
+                    <tbody className="divide-y divide-[#23272f]">
+                      {error ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                            <div className="flex flex-col items-center gap-2">
+                              <AlertTriangle className="w-8 h-8 text-red-500" />
+                              <span>{error}</span>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : allEntities.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                            No entities found
+                          </td>
+                        </tr>
+                      ) : (
+                        allEntities.map((entity) => {
+                          const riskInfo = getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low');
+                          const entityName = entity.type === 'user' 
+                            ? getUserDisplayName(entity as IAMUser | GoogleUser)
+                            : (entity as IAMRole).roleName;
+                          const entityId = entity.type === 'user'
+                            ? (entity as IAMUser).userName || (entity as GoogleUser).primaryEmail
+                            : (entity as IAMRole).roleName;
 
-                        const createDate = formatDate(entity.createDate);
-                        const lastUsed = formatDate(entity.lastUsed);
-
-                        return (
-                          <React.Fragment key={entityId}>
-                            <tr className="border-b border-[#23272f] hover:bg-[#1a1f28]/50 transition-colors">
-                              <td className="px-6 py-5 whitespace-nowrap">
+                          return (
+                            <tr key={entityId} className="hover:bg-white/5">
+                              <td className="px-4 py-3 whitespace-nowrap">
                                 <div className="flex items-center gap-2">
                                   {entity.type === 'user' ? (
-                                    <>
-                                      <User className="w-5 h-5 text-blue-400" />
-                                      <span className="text-blue-400">User</span>
-                                    </>
+                                    <User className="w-5 h-5 text-gray-400" />
                                   ) : (
-                                    <>
-                                      <Shield className="w-5 h-5 text-purple-400" />
-                                      <span className="text-purple-400">Role</span>
-                                    </>
+                                    <Shield className="w-5 h-5 text-gray-400" />
                                   )}
+                                  <span className="font-medium text-white">{entityName}</span>
                                 </div>
                               </td>
-                              <td className="px-6 py-5 whitespace-nowrap">
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="text-gray-300 capitalize">{entity.type}</span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
                                 <div className="flex items-center justify-center">
                                   {entity.provider === 'aws' ? (
                                     <img 
@@ -799,60 +780,33 @@ export default function Permissions() {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
-                                <div className="flex items-center gap-2">
-                                  <a 
-                                    href={entity.provider === 'google' 
-                                      ? 'https://admin.google.com/ac/users'
-                                      : `https://console.aws.amazon.com/iam/home?region=us-east-1#/${entity.type === 'user' ? 'users' : 'roles'}/${entityId}`
-                                    }
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className={`flex items-center gap-1 ${
-                                      entity.type === 'user' ? 'text-blue-400 hover:text-blue-300' : 'text-purple-400 hover:text-purple-300'
-                                    } transition-colors`}
-                                  >
-                                    {entityId}
-                                    <ExternalLink className="w-4 h-4" />
-                                  </a>
-                                </div>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="text-gray-300">
+                                  {entity.createDate ? new Date(entity.createDate).toLocaleDateString() : 'N/A'}
+                                </span>
                               </td>
-                              <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                                {createDate}
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="text-gray-300">
+                                  {entity.lastUsed ? new Date(entity.lastUsed).toLocaleDateString() : 'Never'}
+                                </span>
                               </td>
-                              <td className="px-6 py-5 whitespace-nowrap text-gray-300">
-                                {lastUsed}
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className={`inline-flex items-center px-2.5 py-1 rounded text-sm font-medium ${
+                                  entity.type === 'user' && (entity as IAMUser).hasMFA ? 'bg-green-900/20 text-green-400' : 'bg-red-900/20 text-red-400'
+                                }`}>
+                                  {entity.type === 'user' && (entity as IAMUser).hasMFA ? 'Enabled' : 'Disabled'}
+                                </span>
                               </td>
-                              <td className="px-6 py-5 whitespace-nowrap">
-                                <div className="flex items-center gap-2">
-                                  {entity.type === 'user' && (entity as IAMUser).hasMFA ? (
-                                    <span className="flex items-center gap-1 text-green-400">
-                                      <Lock className="w-4 h-4" />
-                                      Enabled
-                                    </span>
-                                  ) : entity.type === 'user' ? (
-                                    <span className="flex items-center gap-1 text-red-400">
-                                      <AlertTriangle className="w-4 h-4" />
-                                      Disabled
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-500">N/A</span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="px-6 py-5 whitespace-nowrap">
+                              <td className="px-4 py-3 whitespace-nowrap">
                                 <div className="group relative inline-block">
-                                  <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${riskInfo.bgColor} cursor-help`}>
-                                    <RiskIcon className={`w-4 h-4 ${riskInfo.color}`} />
-                                    <span className={`text-sm font-medium ${riskInfo.color}`}>
-                                      {riskInfo.label}
-                                    </span>
+                                  <div className={`flex items-center gap-2 px-2.5 py-1 rounded text-sm font-medium ${riskInfo.bgColor} cursor-help`}>
+                                    <riskInfo.icon className={`w-4 h-4 ${riskInfo.color}`} />
+                                    <span className={riskInfo.color}>{riskInfo.label}</span>
                                   </div>
                                   
                                   {/* Risk Factors Tooltip */}
                                   <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                                    <div className="text-xs space-y-3">
-                                      
+                                    <div className="text-sm space-y-3">
                                       <div className="space-y-1">
                                         <div className="font-semibold text-white">Risk Factors</div>
                                         <ul className="list-disc list-inside space-y-1">
@@ -865,7 +819,7 @@ export default function Permissions() {
                                   </div>
                                 </div>
                               </td>
-                              <td className="px-6 py-5 whitespace-nowrap">
+                              <td className="px-4 py-3 whitespace-nowrap">
                                 <div className="space-y-2">
                                   {/* Inline Policies */}
                                   {(entity?.policies?.filter(p => p.type === 'inline') || []).length > 0 && (
@@ -899,7 +853,7 @@ export default function Permissions() {
                                             </span>
                                             {/* Policy Tooltip */}
                                             <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                                              <div className="text-xs space-y-1">
+                                              <div className="text-sm space-y-1">
                                                 <div className="font-semibold text-white">{policy.name}</div>
                                                 {policy.description && (
                                                   <div className="text-gray-400">{policy.description}</div>
@@ -924,15 +878,15 @@ export default function Permissions() {
                                 </div>
                               </td>
                             </tr>
-                          </React.Fragment>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
