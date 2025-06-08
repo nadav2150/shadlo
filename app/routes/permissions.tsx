@@ -671,7 +671,16 @@ export default function Permissions() {
             {/* Only show table if we have connected providers */}
             {hasConnectedProviders && (
               <div className="relative h-[calc(100vh-400px)] min-h-[500px]">
-                <div className="absolute inset-0 overflow-auto">
+                <div className="absolute inset-0 overflow-auto 
+                  [&::-webkit-scrollbar]:w-2 
+                  [&::-webkit-scrollbar]:h-2
+                  [&::-webkit-scrollbar-track]:bg-transparent 
+                  [&::-webkit-scrollbar-thumb]:bg-gray-600 
+                  [&::-webkit-scrollbar-thumb]:rounded-full 
+                  [&::-webkit-scrollbar-thumb:hover]:bg-gray-500 
+                  [&::-webkit-scrollbar-corner]:bg-transparent
+                  [&::-webkit-scrollbar-track]:rounded-full
+                  [&::-webkit-scrollbar-track]:mx-1">
                   <table className="w-full text-base">
                     <thead className="sticky top-0 z-10 text-sm text-blue-300 uppercase bg-[#1a1f28] shadow-sm">
                       <tr>
@@ -805,7 +814,16 @@ export default function Permissions() {
                                   </div>
                                   
                                   {/* Risk Factors Tooltip */}
-                                  <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                                  <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 max-h-[300px] overflow-y-auto 
+                                    [&::-webkit-scrollbar]:w-1.5 
+                                    [&::-webkit-scrollbar]:h-1.5
+                                    [&::-webkit-scrollbar-track]:bg-transparent 
+                                    [&::-webkit-scrollbar-thumb]:bg-gray-600 
+                                    [&::-webkit-scrollbar-thumb]:rounded-full 
+                                    [&::-webkit-scrollbar-thumb:hover]:bg-gray-500 
+                                    [&::-webkit-scrollbar-corner]:bg-transparent
+                                    [&::-webkit-scrollbar-track]:rounded-full
+                                    [&::-webkit-scrollbar-track]:mx-1">
                                     <div className="text-sm space-y-3">
                                       <div className="space-y-1">
                                         <div className="font-semibold text-white">Risk Factors</div>
@@ -852,7 +870,16 @@ export default function Permissions() {
                                               {policy.name}
                                             </span>
                                             {/* Policy Tooltip */}
-                                            <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                            <div className="absolute left-0 top-full mt-1 w-64 bg-[#1a1f28] border border-[#23272f] rounded-lg p-3 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 max-h-[300px] overflow-y-auto 
+                                              [&::-webkit-scrollbar]:w-1.5 
+                                              [&::-webkit-scrollbar]:h-1.5
+                                              [&::-webkit-scrollbar-track]:bg-transparent 
+                                              [&::-webkit-scrollbar-thumb]:bg-gray-600 
+                                              [&::-webkit-scrollbar-thumb]:rounded-full 
+                                              [&::-webkit-scrollbar-thumb:hover]:bg-gray-500 
+                                              [&::-webkit-scrollbar-corner]:bg-transparent
+                                              [&::-webkit-scrollbar-track]:rounded-full
+                                              [&::-webkit-scrollbar-track]:mx-1">
                                               <div className="text-sm space-y-1">
                                                 <div className="font-semibold text-white">{policy.name}</div>
                                                 {policy.description && (
