@@ -14,7 +14,9 @@ import {
 import { Button } from "~/components/ui";
 import { Modal } from "~/components/ui/modal";
 import { AwsCredentialsForm } from "~/components/AwsCredentialsForm";
+import { GSuiteCredentialsForm } from "~/components/GSuiteCredentialsForm";
 import { getAwsCredentials, setAwsCredentials, clearAwsCredentials } from "~/utils/session.server";
+import { validateGSuiteCredentials, setGSuiteCredentials, clearGSuiteCredentials } from "~/utils/gsuite.server";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 
 export const loader: LoaderFunction = async ({ request }) => {
@@ -53,73 +55,138 @@ async function validateAwsCredentials(accessKeyId: string, secretAccessKey: stri
 export const action: ActionFunction = async ({ request }) => {
   const formData = await request.formData();
   const intent = formData.get("intent")?.toString();
+  const provider = formData.get("provider")?.toString()?.toLowerCase();
 
-  // Handle disconnect action
-  if (intent === "disconnect") {
-    const cookieHeader = await clearAwsCredentials(request);
+  // Debug logs
+  console.log("Action received request with:", {
+    intent,
+    provider,
+    clientId: formData.get("clientId"),
+    clientSecret: formData.get("clientSecret"),
+    allFormData: Object.fromEntries(formData.entries())
+  });
+
+  if (!provider) {
     return json(
-      { success: true, message: "AWS credentials disconnected successfully" },
-      {
-        headers: {
-          "Set-Cookie": cookieHeader
-        }
-      }
-    );
-  }
-
-  // Handle connect/update action
-  const accessKeyId = formData.get("accessKeyId")?.toString();
-  const secretAccessKey = formData.get("secretAccessKey")?.toString();
-  const region = formData.get("region")?.toString();
-
-  if (!accessKeyId || !secretAccessKey || !region) {
-    return json(
-      { error: "All fields are required" },
+      { error: "Provider is required" },
       { status: 400 }
     );
   }
 
-  try {
-    const validationResult = await validateAwsCredentials(accessKeyId, secretAccessKey, region);
-    if (!validationResult.isValid) {
+  // Handle disconnect action
+  if (intent === "disconnect") {
+    if (provider === "aws") {
+      const cookieHeader = await clearAwsCredentials(request);
       return json(
-        { error: validationResult.error },
+        { success: true, message: "AWS credentials disconnected successfully" },
+        {
+          headers: {
+            "Set-Cookie": cookieHeader
+          }
+        }
+      );
+    } else if (provider === "gsuite") {
+      await clearGSuiteCredentials(request);
+      return json({ success: true, message: "G Suite credentials disconnected successfully" });
+    }
+  }
+
+  // Handle connect/update action
+  if (provider === "aws") {
+    const accessKeyId = formData.get("accessKeyId")?.toString();
+    const secretAccessKey = formData.get("secretAccessKey")?.toString();
+    const region = formData.get("region")?.toString();
+
+    if (!accessKeyId || !secretAccessKey || !region) {
+      return json(
+        { error: "All fields are required" },
         { status: 400 }
       );
     }
 
-    // Save credentials to session
-    const cookieHeader = await setAwsCredentials(request, {
-      accessKeyId,
-      secretAccessKey,
-      region,
-    });
+    try {
+      const validationResult = await validateAwsCredentials(accessKeyId, secretAccessKey, region);
+      if (!validationResult.isValid) {
+        return json(
+          { error: validationResult.error },
+          { status: 400 }
+        );
+      }
 
-    if (!cookieHeader) {
-      throw new Error("Failed to save credentials to session");
+      const cookieHeader = await setAwsCredentials(request, {
+        accessKeyId,
+        secretAccessKey,
+        region,
+      });
+
+      if (!cookieHeader) {
+        throw new Error("Failed to save credentials to session");
+      }
+
+      return json(
+        { 
+          success: true,
+          accountId: validationResult.accountId,
+          arn: validationResult.arn,
+          userId: validationResult.userId
+        },
+        {
+          headers: {
+            "Set-Cookie": cookieHeader
+          }
+        }
+      );
+    } catch (error) {
+      console.error("Error validating AWS credentials:", error);
+      return json(
+        { error: "Failed to validate credentials. Please try again." },
+        { status: 500 }
+      );
+    }
+  } else if (provider === "gsuite") {
+    const clientId = formData.get("clientId")?.toString();
+    const clientSecret = formData.get("clientSecret")?.toString();
+
+    if (!clientId || !clientSecret) {
+      return json(
+        { error: "Client ID and Client Secret are required" },
+        { status: 400 }
+      );
     }
 
-    // Return success with account details and the Set-Cookie header
-    return json(
-      { 
-        success: true,
-        accountId: validationResult.accountId,
-        arn: validationResult.arn,
-        userId: validationResult.userId
-      },
-      {
-        headers: {
-          "Set-Cookie": cookieHeader
-        }
+    try {
+      const validationResult = await validateGSuiteCredentials(clientId, clientSecret);
+      if (!validationResult.isValid) {
+        return json(
+          { error: validationResult.error },
+          { status: 400 }
+        );
       }
-    );
-  } catch (error) {
-    console.error("Error validating AWS credentials:", error);
-    return json(
-      { error: "Failed to validate credentials. Please try again." },
-      { status: 500 }
-    );
+
+      // Store the credentials
+      await setGSuiteCredentials(request, {
+        clientId,
+        clientSecret
+      });
+
+      return json({
+        success: true,
+        authUrl: validationResult.authUrl,
+        message: validationResult.message
+      });
+    } catch (error) {
+      console.error("Error validating G Suite credentials:", error);
+      return json(
+        { error: "Failed to validate credentials. Please try again." },
+        { status: 500 }
+      );
+    }
   }
+
+  return json(
+    { error: `Invalid provider: ${provider}` },
+    { status: 400 }
+  );
 };
 
 interface ProviderCardProps {
@@ -344,9 +411,11 @@ export default function ProvidersPage() {
           </div>
         )}
         {selectedProvider === "gsuite" && (
-          <div className="p-4 text-center text-gray-400">
-            Google Workspace integration coming soon...
-          </div>
+          <GSuiteCredentialsForm
+            onSuccess={handleSuccess}
+            onCancel={handleClose}
+            onDisconnect={handleDisconnect}
+          />
         )}
       </Modal>
     </div>
