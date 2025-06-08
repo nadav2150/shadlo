@@ -799,7 +799,10 @@ export default function Permissions() {
                               <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
                                 <div className="flex items-center gap-2">
                                   <a 
-                                    href={`https://console.aws.amazon.com/iam/home?region=us-east-1#/${entity.type === 'user' ? 'users' : 'roles'}/${entityId}`}
+                                    href={entity.provider === 'google' 
+                                      ? 'https://admin.google.com/ac/users'
+                                      : `https://console.aws.amazon.com/iam/home?region=us-east-1#/${entity.type === 'user' ? 'users' : 'roles'}/${entityId}`
+                                    }
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className={`flex items-center gap-1 ${
