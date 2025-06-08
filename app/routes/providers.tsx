@@ -302,6 +302,20 @@ export default function ProvidersPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "google">("aws");
   const [googleError, setGoogleError] = useState<string | null>(null);
+  const [googleUsers, setGoogleUsers] = useState<Array<{
+    id: string;
+    primaryEmail: string;
+    name: {
+      fullName: string;
+      givenName: string;
+      familyName: string;
+    };
+    isAdmin: boolean;
+    isEnforcedIn2Sv: boolean;
+    isEnrolledIn2Sv: boolean;
+    isMailboxSetup: boolean;
+    orgUnitPath: string;
+  }>>([]);
 
   const handleConnect = (provider: "aws" | "azure" | "okta" | "google") => {
     setSelectedProvider(provider);
@@ -345,13 +359,37 @@ export default function ProvidersPage() {
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
-      // Here you would typically send the credential to your backend
       console.log("Google login successful:", credentialResponse);
-      // TODO: Implement the backend authentication logic
-      window.location.reload();
+      
+      // Send credentials to server
+      const formData = new FormData();
+      Object.entries(credentialResponse).forEach(([key, value]) => {
+        if (value != null) {  // Check for both null and undefined
+          formData.append(key, String(value));
+        }
+      });
+
+      const response = await fetch("/api/google/auth", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.details || data.error || "Failed to process credentials");
+      }
+
+      if (data.error) {
+        throw new Error(data.details || data.error);
+      }
+
+      // Update the users state with the fetched data
+      setGoogleUsers(data.users);
+      setGoogleError(null);
     } catch (error) {
       console.error("Error handling Google login:", error);
-      setGoogleError("Failed to connect Google account");
+      setGoogleError(error instanceof Error ? error.message : "Failed to connect Google account");
     }
   };
 
@@ -414,6 +452,47 @@ export default function ProvidersPage() {
             onConnect={() => handleConnect("okta")}
           />
         </div>
+
+        {/* Display Google Users */}
+        {googleUsers.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-xl font-semibold text-white mb-4">Google Workspace Users</h2>
+            <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-white/10">
+                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Name</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Email</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Admin</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">2SV</th>
+                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Org Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {googleUsers.map((user) => (
+                    <tr key={user.id} className="border-b border-white/5 hover:bg-white/5">
+                      <td className="px-4 py-3 text-sm text-white">
+                        {user.name.fullName}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-white">
+                        {user.primaryEmail}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-white">
+                        {user.isAdmin ? "Yes" : "No"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-white">
+                        {user.isEnrolledIn2Sv ? "Yes" : "No"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-white">
+                        {user.orgUnitPath}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         <Modal
           isOpen={showModal}
