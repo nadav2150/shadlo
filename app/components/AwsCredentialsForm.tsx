@@ -96,7 +96,8 @@ export function AwsCredentialsForm({ onSuccess, onCancel, initialCredentials, on
       )}
 
       {/* Form */}
-      <Form method="post" className="space-y-4">
+      <Form method="post" className="space-y-6">
+        <input type="hidden" name="provider" value="aws" />
         <div>
           <Label htmlFor="accessKeyId" className="text-gray-300">
             AWS Access Key ID

@@ -15,13 +15,19 @@ import { Button } from "~/components/ui";
 import { Modal } from "~/components/ui/modal";
 import { AwsCredentialsForm } from "~/components/AwsCredentialsForm";
 import { GSuiteCredentialsForm } from "~/components/GSuiteCredentialsForm";
-import { getAwsCredentials, setAwsCredentials, clearAwsCredentials } from "~/utils/session.server";
+import { getAwsCredentials, setAwsCredentials, clearAwsCredentials, getGSuiteCredentials } from "~/utils/session.server";
 import { validateGSuiteCredentials, setGSuiteCredentials, clearGSuiteCredentials } from "~/utils/gsuite.server";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 
 export const loader: LoaderFunction = async ({ request }) => {
-  const credentials = await getAwsCredentials(request);
-  return json({ credentials });
+  const awsCredentials = await getAwsCredentials(request);
+  const gsuiteCredentials = await getGSuiteCredentials(request);
+  return json({ 
+    credentials: {
+      aws: awsCredentials,
+      gsuite: gsuiteCredentials
+    }
+  });
 };
 
 // Validation function
@@ -80,14 +86,27 @@ export const action: ActionFunction = async ({ request }) => {
       return json(
         { success: true, message: "AWS credentials disconnected successfully" },
         {
-          headers: {
+          headers: cookieHeader ? {
             "Set-Cookie": cookieHeader
-          }
+          } : undefined
         }
       );
     } else if (provider === "gsuite") {
-      await clearGSuiteCredentials(request);
-      return json({ success: true, message: "G Suite credentials disconnected successfully" });
+      const result = await clearGSuiteCredentials(request);
+      if (!result.success) {
+        return json(
+          { error: result.message },
+          { status: 500 }
+        );
+      }
+      return json(
+        { success: true, message: "G Suite credentials disconnected successfully" },
+        {
+          headers: result.cookieHeader ? {
+            "Set-Cookie": result.cookieHeader
+          } : undefined
+        }
+      );
     }
   }
 
@@ -163,17 +182,28 @@ export const action: ActionFunction = async ({ request }) => {
         );
       }
 
-      // Store the credentials
-      await setGSuiteCredentials(request, {
+      // Store the credentials in session
+      const result = await setGSuiteCredentials(request, {
         clientId,
         clientSecret
       });
 
-      return json({
-        success: true,
-        authUrl: validationResult.authUrl,
-        message: validationResult.message
-      });
+      if (!result.success) {
+        throw new Error(result.message);
+      }
+
+      return json(
+        {
+          success: true,
+          authUrl: validationResult.authUrl,
+          message: validationResult.message
+        },
+        {
+          headers: result.cookieHeader ? {
+            "Set-Cookie": result.cookieHeader
+          } : undefined
+        }
+      );
     } catch (error) {
       console.error("Error validating G Suite credentials:", error);
       return json(
@@ -337,13 +367,13 @@ export default function ProvidersPage() {
               className="w-12 invert brightness-0"
             />
           }
-          isConnected={!!credentials?.accessKeyId}
+          isConnected={!!credentials.aws?.accessKeyId}
           onConnect={() => handleConnect("aws")}
           onManage={() => handleManage("aws")}
           onDisconnect={handleDisconnect}
-          accountDetails={credentials ? {
-            accountId: credentials.accountId,
-            arn: credentials.arn
+          accountDetails={credentials.aws ? {
+            accountId: credentials.aws.accountId,
+            arn: credentials.aws.arn
           } : undefined}
         />
         <ProviderCard
@@ -382,8 +412,10 @@ export default function ProvidersPage() {
               className="w-16 invert brightness-0"
             />
           }
-          isConnected={false}
+          isConnected={!!credentials.gsuite?.clientId}
           onConnect={() => handleConnect("gsuite")}
+          onManage={() => handleManage("gsuite")}
+          onDisconnect={handleDisconnect}
         />
       </div>
 
@@ -396,7 +428,7 @@ export default function ProvidersPage() {
           <AwsCredentialsForm
             onSuccess={handleSuccess}
             onCancel={handleClose}
-            initialCredentials={isManaging ? credentials : undefined}
+            initialCredentials={isManaging ? credentials.aws : undefined}
             onDisconnect={handleDisconnect}
           />
         )}
@@ -414,6 +446,7 @@ export default function ProvidersPage() {
           <GSuiteCredentialsForm
             onSuccess={handleSuccess}
             onCancel={handleClose}
+            initialCredentials={isManaging ? credentials.gsuite : undefined}
             onDisconnect={handleDisconnect}
           />
         )}

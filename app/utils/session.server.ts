@@ -7,6 +7,12 @@ interface SessionData {
     secretAccessKey: string;
     region: string;
   };
+  gsuiteCredentials?: {
+    clientId: string;
+    clientSecret: string;
+    accessToken?: string;
+    refreshToken?: string;
+  };
 }
 
 // Create a session storage
@@ -66,6 +72,53 @@ export async function setAwsCredentials(
 export async function clearAwsCredentials(request: Request) {
   const session = await getSession(request.headers.get("Cookie"));
   session.unset("awsCredentials");
+  return commitSession(session);
+}
+
+// Helper functions to manage GSuite credentials in session
+export async function getGSuiteCredentials(request: Request) {
+  const cookieHeader = request.headers.get("Cookie");
+  console.log("Debug - Request URL:", request.url);
+  console.log("Debug - Cookie header:", cookieHeader);
+  
+  const session = await getSession(cookieHeader);
+  console.log("Debug - Session data:", session.data);
+  
+  const credentials = session.get("gsuiteCredentials");
+  console.log("Debug - Retrieved GSuite credentials:", credentials ? "Found" : "Not found");
+  
+  return credentials;
+}
+
+export async function setGSuiteCredentials(
+  request: Request,
+  credentials: SessionData["gsuiteCredentials"]
+) {
+  if (!credentials) {
+    console.log("Debug - No GSuite credentials provided to set");
+    return null;
+  }
+
+  console.log("Debug - Setting GSuite credentials:", { 
+    clientId: credentials.clientId,
+    hasClientSecret: !!credentials.clientSecret,
+    hasAccessToken: !!credentials.accessToken,
+    hasRefreshToken: !!credentials.refreshToken
+  });
+  
+  const session = await getSession(request.headers.get("Cookie"));
+  session.set("gsuiteCredentials", credentials);
+  
+  const cookieHeader = await commitSession(session);
+  console.log("Debug - New cookie header:", cookieHeader);
+  console.log("Debug - Request URL when setting:", request.url);
+  
+  return cookieHeader;
+}
+
+export async function clearGSuiteCredentials(request: Request) {
+  const session = await getSession(request.headers.get("Cookie"));
+  session.unset("gsuiteCredentials");
   return commitSession(session);
 }
 

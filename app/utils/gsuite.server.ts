@@ -1,5 +1,10 @@
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
+import { 
+  setGSuiteCredentials as setSessionCredentials, 
+  clearGSuiteCredentials as clearSessionCredentials,
+  getGSuiteCredentials as getSessionCredentials 
+} from "./session.server";
 
 async function verifyClientCredentials(clientId: string, clientSecret: string): Promise<boolean> {
   try {
@@ -154,25 +159,46 @@ export async function setGSuiteCredentials(request: Request, credentials: {
   accessToken?: string;
   refreshToken?: string;
 }) {
-  // TODO: Implement secure storage of credentials
-  // This should be implemented similar to how AWS credentials are stored
-  return {
-    success: true,
-    message: 'G Suite credentials stored successfully'
-  };
+  try {
+    const cookieHeader = await setSessionCredentials(request, credentials);
+    if (!cookieHeader) {
+      throw new Error("Failed to save credentials to session");
+    }
+    return {
+      success: true,
+      message: 'G Suite credentials stored successfully',
+      cookieHeader
+    };
+  } catch (error) {
+    console.error("Error storing G Suite credentials:", error);
+    return {
+      success: false,
+      message: 'Failed to store G Suite credentials',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
 }
 
 // Function to get G Suite credentials from session
 export async function getGSuiteCredentials(request: Request) {
-  // TODO: Implement retrieval of stored credentials
-  return null;
+  return await getSessionCredentials(request);
 }
 
 // Function to clear G Suite credentials from session
 export async function clearGSuiteCredentials(request: Request) {
-  // TODO: Implement clearing of stored credentials
-  return {
-    success: true,
-    message: 'G Suite credentials cleared successfully'
-  };
+  try {
+    const cookieHeader = await clearSessionCredentials(request);
+    return {
+      success: true,
+      message: 'G Suite credentials cleared successfully',
+      cookieHeader
+    };
+  } catch (error) {
+    console.error("Error clearing G Suite credentials:", error);
+    return {
+      success: false,
+      message: 'Failed to clear G Suite credentials',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
 } 

@@ -1,18 +1,23 @@
 import { useState } from "react";
 import { Form, useActionData, useNavigation } from "@remix-run/react";
 import { Button, Input, Label } from "~/components/ui";
-import { Loader2, ExternalLink } from "lucide-react";
+import { Loader2, ExternalLink, Settings, Trash2 } from "lucide-react";
 
 interface GSuiteCredentialsFormProps {
   onSuccess?: () => void;
   onCancel?: () => void;
   onDisconnect?: () => void;
+  initialCredentials?: {
+    clientId: string;
+    clientSecret: string;
+  };
 }
 
 export function GSuiteCredentialsForm({ 
   onSuccess, 
   onCancel,
-  onDisconnect 
+  onDisconnect,
+  initialCredentials
 }: GSuiteCredentialsFormProps) {
   const actionData = useActionData<{ 
     error?: string; 
@@ -22,7 +27,7 @@ export function GSuiteCredentialsForm({
   }>();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
-  const [showAuthUrl, setShowAuthUrl] = useState(false);
+  const isEditing = !!initialCredentials;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     // Debug logs
@@ -77,14 +82,16 @@ export function GSuiteCredentialsForm({
 
   return (
     <div className="space-y-6">
-      <div className="text-sm text-gray-400">
-        <p>To connect your Google Workspace account, you'll need to:</p>
-        <ol className="list-decimal list-inside mt-2 space-y-1">
-          <li>Have admin access to your Google Workspace organization</li>
-          <li>Create OAuth 2.0 credentials in the Google Cloud Console</li>
-          <li>Grant necessary permissions to manage users and groups</li>
-        </ol>
-      </div>
+      {!isEditing && (
+        <div className="text-sm text-gray-400">
+          <p>To connect your Google Workspace account, you'll need to:</p>
+          <ol className="list-decimal list-inside mt-2 space-y-1">
+            <li>Have admin access to your Google Workspace organization</li>
+            <li>Create OAuth 2.0 credentials in the Google Cloud Console</li>
+            <li>Grant necessary permissions to manage users and groups</li>
+          </ol>
+        </div>
+      )}
 
       <Form 
         method="post" 
@@ -92,7 +99,7 @@ export function GSuiteCredentialsForm({
         className="space-y-6"
         action="/providers"
       >
-        <input type="hidden" name="intent" value="connect" />
+        <input type="hidden" name="intent" value={isEditing ? "update" : "connect"} />
         <input type="hidden" name="provider" value="gsuite" />
         <div className="space-y-4">
           <div>
@@ -102,6 +109,7 @@ export function GSuiteCredentialsForm({
               name="clientId"
               type="text"
               required
+              defaultValue={initialCredentials?.clientId}
               placeholder="Enter your OAuth 2.0 Client ID"
               className="mt-1"
             />
@@ -113,8 +121,8 @@ export function GSuiteCredentialsForm({
               id="clientSecret"
               name="clientSecret"
               type="password"
-              required
-              placeholder="Enter your OAuth 2.0 Client Secret"
+              required={!isEditing}
+              placeholder={isEditing ? "Leave blank to keep existing" : "Enter your OAuth 2.0 Client Secret"}
               className="mt-1"
             />
           </div>
@@ -127,6 +135,17 @@ export function GSuiteCredentialsForm({
         )}
 
         <div className="flex justify-end gap-3">
+          {isEditing && onDisconnect && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onDisconnect}
+              className="flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-900/20"
+            >
+              <Trash2 className="w-4 h-4" />
+              Disconnect
+            </Button>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -139,10 +158,10 @@ export function GSuiteCredentialsForm({
             {isSubmitting ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Validating...
+                {isEditing ? "Updating..." : "Validating..."}
               </>
             ) : (
-              "Validate Credentials"
+              isEditing ? "Update Credentials" : "Validate Credentials"
             )}
           </Button>
         </div>
