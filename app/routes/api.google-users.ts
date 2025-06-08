@@ -43,6 +43,8 @@ export const loader: LoaderFunction = async ({ request }) => {
       lastLoginTime: user.lastLoginTime || null,
       suspended: user.suspended || false,
       changePasswordAtNextLogin: user.changePasswordAtNextLogin || false,
+      connectedToAWS: false,
+      sensitiveGroups: user.orgUnitPath?.split('/').filter(Boolean) || [],
       riskAssessment: calculateRiskScore({
         lastLoginTime: user.lastLoginTime || null,
         suspended: user.suspended || false,
@@ -50,7 +52,9 @@ export const loader: LoaderFunction = async ({ request }) => {
         isDelegatedAdmin: user.isDelegatedAdmin || false,
         changePasswordAtNextLogin: user.changePasswordAtNextLogin || false,
         isMailboxSetup: user.isMailboxSetup || false,
-        isEnrolledIn2Sv: user.isEnrolledIn2Sv || false
+        isEnrolledIn2Sv: user.isEnrolledIn2Sv || false,
+        connectedToAWS: false,
+        sensitiveGroups: user.orgUnitPath?.split('/').filter(Boolean) || []
       })
     })) || [];
 
