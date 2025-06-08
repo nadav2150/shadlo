@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useLoaderData, useActionData, useNavigation } from "@remix-run/react";
 import { json, type LoaderFunction, type ActionFunction } from "@remix-run/node";
 import { 
@@ -9,20 +9,23 @@ import {
   AlertCircle,
   ArrowRight,
   Settings,
-  Trash2
+  Trash2,
+  Mail
 } from "lucide-react";
 import { Button } from "~/components/ui";
 import { Modal } from "~/components/ui/modal";
 import { AwsCredentialsForm } from "~/components/AwsCredentialsForm";
 import { getAwsCredentials, setAwsCredentials, clearAwsCredentials } from "~/utils/session.server";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 
 export const loader: LoaderFunction = async ({ request }) => {
   const awsCredentials = await getAwsCredentials(request);
   return json({ 
     credentials: {
       aws: awsCredentials
-    }
+    },
+    googleClientId: process.env.GOOGLE_CLIENT_ID
   });
 };
 
@@ -146,13 +149,33 @@ interface ProviderCardProps {
   description: string;
   icon: React.ReactNode;
   isConnected: boolean;
-  onConnect: () => void;
+  onConnect?: () => void;
   onManage?: () => void;
   onDisconnect?: () => void;
   accountDetails?: {
     accountId?: string;
     arn?: string;
   };
+}
+
+function GoogleLoginButton({ onSuccess, onError }: { onSuccess: (response: any) => void, onError: () => void }) {
+  const login = useGoogleLogin({
+    onSuccess: (response) => onSuccess(response),
+    onError: () => onError(),
+    flow: 'implicit',
+  });
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => login()}
+      className="flex items-center"
+    >
+      Connect
+      <ArrowRight className="w-4 h-4 ml-2" />
+    </Button>
+  );
 }
 
 function ProviderCard({ 
@@ -163,8 +186,9 @@ function ProviderCard({
   onConnect, 
   onManage,
   onDisconnect,
-  accountDetails 
-}: ProviderCardProps) {
+  accountDetails,
+  customConnectButton
+}: ProviderCardProps & { customConnectButton?: React.ReactNode }) {
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const isComingSoon = name === "Azure" || name === "Okta";
 
@@ -208,16 +232,18 @@ function ProviderCard({
             )}
           </div>
         ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onConnect}
-            disabled={isComingSoon}
-            className={isComingSoon ? "opacity-50 cursor-not-allowed" : ""}
-          >
-            {isComingSoon ? "Coming Soon" : "Connect"}
-            {!isComingSoon && <ArrowRight className="w-4 h-4 ml-2" />}
-          </Button>
+          customConnectButton || (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onConnect}
+              disabled={isComingSoon}
+              className={isComingSoon ? "opacity-50 cursor-not-allowed" : ""}
+            >
+              {isComingSoon ? "Coming Soon" : "Connect"}
+              {!isComingSoon && <ArrowRight className="w-4 h-4 ml-2" />}
+            </Button>
+          )
         )}
       </div>
 
@@ -270,18 +296,19 @@ function ProviderCard({
 }
 
 export default function ProvidersPage() {
-  const { credentials } = useLoaderData<typeof loader>();
+  const { credentials, googleClientId } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const [showModal, setShowModal] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta">("aws");
+  const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "google">("aws");
+  const [googleError, setGoogleError] = useState<string | null>(null);
 
-  const handleConnect = (provider: "aws" | "azure" | "okta") => {
+  const handleConnect = (provider: "aws" | "azure" | "okta" | "google") => {
     setSelectedProvider(provider);
     setShowModal(true);
   };
 
-  const handleManage = (provider: "aws" | "azure" | "okta") => {
+  const handleManage = (provider: "aws" | "azure" | "okta" | "google") => {
     setSelectedProvider(provider);
     setShowModal(true);
   };
@@ -316,56 +343,93 @@ export default function ProvidersPage() {
     window.location.reload();
   };
 
+  const handleGoogleSuccess = async (credentialResponse: any) => {
+    try {
+      // Here you would typically send the credential to your backend
+      console.log("Google login successful:", credentialResponse);
+      // TODO: Implement the backend authentication logic
+      window.location.reload();
+    } catch (error) {
+      console.error("Error handling Google login:", error);
+      setGoogleError("Failed to connect Google account");
+    }
+  };
+
+  const handleGoogleError = () => {
+    setGoogleError("Google login failed. Please try again.");
+  };
+
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-white mb-8">Identity Providers</h1>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <ProviderCard
-          name="AWS"
-          description="Connect your AWS account to manage IAM users and roles"
-          icon={<Cloud className="w-6 h-6 text-blue-400" />}
-          isConnected={!!credentials.aws}
-          onConnect={() => handleConnect("aws")}
-          onManage={() => handleManage("aws")}
-          onDisconnect={handleDisconnect}
-          accountDetails={credentials.aws ? {
-            accountId: credentials.aws.accountId,
-            arn: credentials.aws.arn
-          } : undefined}
-        />
-
-        <ProviderCard
-          name="Azure"
-          description="Connect your Azure AD to manage users and groups"
-          icon={<Shield className="w-6 h-6 text-blue-500" />}
-          isConnected={false}
-          onConnect={() => handleConnect("azure")}
-        />
-
-        <ProviderCard
-          name="Okta"
-          description="Connect your Okta organization to manage users and groups"
-          icon={<Key className="w-6 h-6 text-purple-400" />}
-          isConnected={false}
-          onConnect={() => handleConnect("okta")}
-        />
-      </div>
-
-      <Modal
-        isOpen={showModal}
-        onClose={handleClose}
-        title={credentials[selectedProvider] ? `Manage ${selectedProvider.toUpperCase()}` : `Connect ${selectedProvider.toUpperCase()}`}
-      >
-        {selectedProvider === "aws" && (
-          <AwsCredentialsForm
-            onSuccess={handleSuccess}
-            onCancel={handleClose}
-            initialCredentials={credentials.aws}
-            onDisconnect={handleDisconnect}
-          />
+    <GoogleOAuthProvider clientId={googleClientId || ""}>
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-2xl font-bold text-white mb-8">Identity Providers</h1>
+        
+        {googleError && (
+          <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400">
+            {googleError}
+          </div>
         )}
-      </Modal>
-    </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <ProviderCard
+            name="AWS"
+            description="Connect your AWS account to manage IAM users and roles"
+            icon={<Cloud className="w-6 h-6 text-blue-400" />}
+            isConnected={!!credentials.aws}
+            onConnect={() => handleConnect("aws")}
+            onManage={() => handleManage("aws")}
+            onDisconnect={handleDisconnect}
+            accountDetails={credentials.aws ? {
+              accountId: credentials.aws.accountId,
+              arn: credentials.aws.arn
+            } : undefined}
+          />
+
+          <ProviderCard
+            name="Google"
+            description="Connect your Google Workspace to manage users and groups"
+            icon={<Mail className="w-6 h-6 text-red-400" />}
+            isConnected={false}
+            customConnectButton={
+              <GoogleLoginButton
+                onSuccess={handleGoogleSuccess}
+                onError={handleGoogleError}
+              />
+            }
+          />
+
+          <ProviderCard
+            name="Azure"
+            description="Connect your Azure AD to manage users and groups"
+            icon={<Shield className="w-6 h-6 text-blue-500" />}
+            isConnected={false}
+            onConnect={() => handleConnect("azure")}
+          />
+
+          <ProviderCard
+            name="Okta"
+            description="Connect your Okta organization to manage users and groups"
+            icon={<Key className="w-6 h-6 text-purple-400" />}
+            isConnected={false}
+            onConnect={() => handleConnect("okta")}
+          />
+        </div>
+
+        <Modal
+          isOpen={showModal}
+          onClose={handleClose}
+          title={credentials[selectedProvider] ? `Manage ${selectedProvider.toUpperCase()}` : `Connect ${selectedProvider.toUpperCase()}`}
+        >
+          {selectedProvider === "aws" && (
+            <AwsCredentialsForm
+              onSuccess={handleSuccess}
+              onCancel={handleClose}
+              initialCredentials={credentials.aws}
+              onDisconnect={handleDisconnect}
+            />
+          )}
+        </Modal>
+      </div>
+    </GoogleOAuthProvider>
   );
 } 
