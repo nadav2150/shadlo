@@ -387,23 +387,11 @@ export default function Permissions() {
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   // Check which providers are connected
   const isAwsConnected = !!credentials?.accessKeyId;
   const isGoogleConnected = users.some(user => user.provider === 'google');
   const hasConnectedProviders = isAwsConnected || isGoogleConnected;
-
-  // Helper function to toggle row expansion
-  const toggleRow = (entityId: string) => {
-    const newExpandedRows = new Set(expandedRows);
-    if (newExpandedRows.has(entityId)) {
-      newExpandedRows.delete(entityId);
-    } else {
-      newExpandedRows.add(entityId);
-    }
-    setExpandedRows(newExpandedRows);
-  };
 
   // Format dates safely
   const formatDate = (dateStr: string | undefined): string => {
@@ -743,13 +731,6 @@ export default function Permissions() {
                           <SortIndicator field="policies" />
                         </div>
                       </th>
-                      <th 
-                        className="px-6 py-4 font-semibold cursor-pointer hover:bg-[#23272f] transition-colors"
-                      >
-                        <div className="flex items-center">
-                          Actions
-                        </div>
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800">
@@ -777,8 +758,7 @@ export default function Permissions() {
                         const entityId = entity.type === 'user' 
                           ? getUserDisplayName(entity as IAMUser | GoogleUser)
                           : (entity as IAMRole).roleName;
-                        const isExpanded = expandedRows.has(entityId);
-                        
+
                         const createDate = formatDate(entity.createDate);
                         const lastUsed = formatDate(entity.lastUsed);
 
@@ -943,198 +923,7 @@ export default function Permissions() {
                                   )}
                                 </div>
                               </td>
-                              <td className="px-6 py-4">
-                                <button
-                                  onClick={() => toggleRow(entityId)}
-                                  className="text-gray-400 hover:text-white transition-colors"
-                                >
-                                  {isExpanded ? (
-                                    <ChevronDown className="w-5 h-5" />
-                                  ) : (
-                                    <ChevronRight className="w-5 h-5" />
-                                  )}
-                                </button>
-                              </td>
                             </tr>
-                            
-                            {/* Expanded Score Details Row */}
-                            {isExpanded && (
-                              <tr className="border-b border-[#23272f] bg-[#1a1f28]/30">
-                                <td colSpan={8} className="px-6 py-4">
-                                  <div className="space-y-6">
-                                    {/* Risk Overview Card */}
-                                    <div className="p-6 rounded-xl bg-gradient-to-br from-[#1a1f28] to-[#23272f] border border-[#23272f]">
-                                      <div className="flex items-center gap-4 mb-4">
-                                        <div className={`p-3 rounded-lg ${riskInfo.bgColor}`}>
-                                          <RiskIcon className={`w-6 h-6 ${riskInfo.color}`} />
-                                        </div>
-                                        <div>
-                                          <h3 className="text-lg font-semibold text-white">Risk Assessment Overview</h3>
-                                          <p className="text-gray-400 text-sm">Current Risk Level: {riskInfo.label}</p>
-                                        </div>
-                                      </div>
-                                      <div className="grid grid-cols-3 gap-4">
-                                        {/* Activity Score */}
-                                        <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-                                          <div className="flex items-center gap-2 mb-3">
-                                            <div className="p-2 rounded-lg bg-blue-500/10">
-                                              <User className="w-4 h-4 text-blue-400" />
-                                            </div>
-                                            <h4 className="text-sm font-semibold text-white">
-                                              Activity Score {entity.riskAssessment?.lastUsedScore ? <span className="text-red-400">+{entity.riskAssessment.lastUsedScore}</span> : ''}
-                                            </h4>
-                                          </div>
-                                          <div className="space-y-2">
-                                            <div className="flex justify-between items-center">
-                                              <span className="text-gray-400 text-sm">Last Activity</span>
-                                              <span className="text-white text-sm">
-                                                {lastUsed}
-                                              </span>
-                                            </div>
-                                            {entity.type === 'user' && (
-                                              <div className="flex justify-between items-center">
-                                                <span className="text-gray-400 text-sm">Access Keys</span>
-                                                <span className="text-white text-sm">
-                                                  {(entity as IAMUser).accessKeys?.length || 0} active
-                                                </span>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        {/* Permission Score */}
-                                        <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-                                          <div className="flex items-center gap-2 mb-3">
-                                            <div className="p-2 rounded-lg bg-purple-500/10">
-                                              <Key className="w-4 h-4 text-purple-400" />
-                                            </div>
-                                            <h4 className="text-sm font-semibold text-white">
-                                              Permission Score {entity.riskAssessment?.permissionScore ? <span className="text-red-400">+{entity.riskAssessment.permissionScore}</span> : ''}
-                                            </h4>
-                                          </div>
-                                          <div className="space-y-2">
-                                            <div className="flex justify-between items-center">
-                                              <span className="text-gray-400 text-sm">Total Policies</span>
-                                              <span className="text-white text-sm">{entity.policies.length}</span>
-                                            </div>
-                                            <div className="flex justify-between items-center">
-                                              <span className="text-gray-400 text-sm">High Risk Policies</span>
-                                              <span className="text-white text-sm">
-                                                {entity.riskAssessment?.shadowPermissions.filter(p => p.severity === 'high').length || 0}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        </div>
-
-                                        {/* Identity Context Score */}
-                                        <div className="p-4 rounded-lg bg-white/5 border border-white/10">
-                                          <div className="flex items-center gap-2 mb-3">
-                                            <div className="p-2 rounded-lg bg-green-500/10">
-                                              <Shield className="w-4 h-4 text-green-400" />
-                                            </div>
-                                            <h4 className="text-sm font-semibold text-white">
-                                              Identity Context {entity.riskAssessment?.identityScore ? <span className="text-red-400">+{entity.riskAssessment.identityScore}</span> : ''}
-                                            </h4>
-                                          </div>
-                                          <div className="space-y-2">
-                                            {entity.type === 'user' && (
-                                              <div className="flex justify-between items-center">
-                                                <span className="text-gray-400 text-sm">MFA Status</span>
-                                                <span className={`text-sm ${(entity as IAMUser).hasMFA ? 'text-green-400' : 'text-red-400'}`}>
-                                                  {(entity as IAMUser).hasMFA ? 'Enabled' : 'Disabled'}
-                                                </span>
-                                              </div>
-                                            )}
-                                            <div className="flex justify-between items-center">
-                                              <span className="text-gray-400 text-sm">Account Age</span>
-                                              <span className="text-white text-sm">
-                                                {entity.createDate ? 
-                                                  Math.floor((Date.now() - new Date(entity.createDate).getTime()) / (1000 * 60 * 60 * 24 * 30)) + ' months' :
-                                                  'N/A'
-                                                }
-                                              </span>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    {/* Shadow Permissions */}
-                                    {entity.riskAssessment?.shadowPermissions && entity.riskAssessment.shadowPermissions.length > 0 && (
-                                      <div className="p-6 rounded-xl bg-gradient-to-br from-[#1a1f28] to-[#23272f] border border-[#23272f]">
-                                        <div className="flex items-center gap-2 mb-4">
-                                          <div className="p-2 rounded-lg bg-red-500/10">
-                                            <AlertTriangle className="w-4 h-4 text-red-400" />
-                                          </div>
-                                          <h3 className="text-lg font-semibold text-white">Shadow Permissions</h3>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                          {entity.riskAssessment.shadowPermissions.map((permission, i) => (
-                                            <div key={i} className="p-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors">
-                                              <div className="flex items-center gap-2 mb-2">
-                                                <span className={`text-xs font-medium px-2 py-1 rounded ${
-                                                  permission.severity === 'high' ? 'bg-red-500/20 text-red-400' :
-                                                  permission.severity === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                  'bg-green-500/20 text-green-400'
-                                                }`}>
-                                                  {permission.severity.toUpperCase()}
-                                                </span>
-                                                <span className="text-xs font-medium text-white">{permission.type}</span>
-                                              </div>
-                                              <p className="text-gray-300 text-sm mb-1">{permission.description}</p>
-                                              <p className="text-gray-400 text-xs">{permission.details}</p>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Score Calculation */}
-                                    <div className="p-6 rounded-xl bg-gradient-to-br from-[#1a1f28] to-[#23272f] border border-[#23272f]">
-                                      <div className="flex items-center gap-2 mb-4">
-                                        <div className="p-2 rounded-lg bg-blue-500/10">
-                                          <AlertCircle className="w-4 h-4 text-blue-400" />
-                                        </div>
-                                        <h3 className="text-lg font-semibold text-white">Risk Score</h3>
-                                      </div>
-                                      <div className="space-y-4">
-                                        <div className="p-3 rounded-lg bg-white/5 border border-white/10">
-                                          {(() => {
-                                            const score = entity.riskAssessment?.score ?? 0;
-                                            return (
-                                              <>
-                                                <div className="flex justify-between items-center">
-                                                  <span className="text-sm text-gray-400">Current Score</span>
-                                                  <div className="flex items-center gap-2">
-                                                    <span className={`text-lg font-bold ${
-                                                      score <= 4 ? 'text-green-400' :
-                                                      score <= 9 ? 'text-yellow-400' :
-                                                      score <= 14 ? 'text-orange-400' :
-                                                      'text-red-400'
-                                                    }`}>
-                                                      {score}
-                                                    </span>
-                                                    <span className="text-sm text-gray-400">
-                                                      {score <= 4 ? '(Low Risk)' :
-                                                       score <= 9 ? '(Medium Risk)' :
-                                                       score <= 14 ? '(High Risk)' :
-                                                       '(Critical Risk)'}
-                                                    </span>
-                                                  </div>
-                                                </div>
-                                                <div className="mt-2 text-xs text-gray-500">
-                                                  Risk Levels: Low (≤4) • Medium (5-9) • High (10-14) • Critical ({'>'}14)
-                                                </div>
-                                              </>
-                                            );
-                                          })()}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
                           </React.Fragment>
                         );
                       })
