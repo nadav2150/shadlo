@@ -203,39 +203,84 @@ export const loader: LoaderFunction = async ({ request }) => {
   }
 };
 
-// Helper function to get risk level color and icon
-function getRiskLevelInfo(level: 'low' | 'medium' | 'high' | 'critical') {
-  switch (level) {
+// Helper function to get user display name
+const getUserDisplayName = (user: IAMUser | GoogleUser): string => {
+  if (user.provider === 'google') {
+    return (user as GoogleUser).primaryEmail;
+  }
+  return (user as IAMUser).userName;
+};
+
+// Helper function to get provider info
+const getProviderInfo = (provider: 'aws' | 'azure' | 'gcp' | 'google') => {
+  switch (provider) {
+    case 'aws':
+      return {
+        label: 'AWS',
+        icon: Cloud,
+        color: 'text-blue-400'
+      };
+    case 'google':
+      return {
+        label: 'Google',
+        icon: Mail,
+        color: 'text-red-400'
+      };
+    case 'azure':
+      return {
+        label: 'Azure',
+        icon: Shield,
+        color: 'text-blue-500'
+      };
+    case 'gcp':
+      return {
+        label: 'GCP',
+        icon: Cloud,
+        color: 'text-green-400'
+      };
+    default:
+      return {
+        label: 'Unknown',
+        icon: Settings,
+        color: 'text-gray-400'
+      };
+  }
+};
+
+// Helper function to get risk level info
+const getRiskLevelInfo = (riskLevel: 'low' | 'medium' | 'high' | 'critical') => {
+  switch (riskLevel) {
     case 'critical':
       return {
-        color: 'text-red-500',
-        bgColor: 'bg-red-500/10',
+        label: 'Critical',
         icon: AlertOctagon,
-        label: 'Critical'
+        color: 'text-red-500',
+        bgColor: 'bg-red-500/10'
       };
     case 'high':
       return {
-        color: 'text-orange-500',
-        bgColor: 'bg-orange-500/10',
+        label: 'High',
         icon: AlertTriangle,
-        label: 'High'
+        color: 'text-red-400',
+        bgColor: 'bg-red-500/10'
       };
     case 'medium':
       return {
-        color: 'text-yellow-500',
-        bgColor: 'bg-yellow-500/10',
+        label: 'Medium',
         icon: AlertCircle,
-        label: 'Medium'
+        color: 'text-yellow-400',
+        bgColor: 'bg-yellow-500/10'
       };
     case 'low':
+    default:
       return {
-        color: 'text-green-500',
-        bgColor: 'bg-green-500/10',
+        label: 'Low',
         icon: Shield,
-        label: 'Low'
+        color: 'text-green-400',
+        bgColor: 'bg-green-500/10'
       };
   }
-}
+};
 
 // Helper function to get shadow permission icon and color
 function getShadowPermissionInfo(type: string) {
@@ -285,42 +330,8 @@ function getShadowPermissionInfo(type: string) {
   }
 }
 
-// Add this helper function after the other helper functions
-function getProviderInfo(provider: 'aws' | 'azure' | 'gcp' | 'google') {
-  switch (provider) {
-    case 'aws':
-      return {
-        icon: '/aws.svg',
-        label: 'AWS'
-      };
-    case 'azure':
-      return {
-        icon: '/azure.svg',
-        label: 'Azure'
-      };
-    case 'gcp':
-      return {
-        icon: '/gcp.svg',
-        label: 'GCP'
-      };
-    case 'google':
-      return {
-        icon: '/google.svg',
-        label: 'Google'
-      };
-  }
-}
-
 type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' | 'risk' | 'policies';
 type SortDirection = 'asc' | 'desc';
-
-// Add a helper function to get the display name for any user type
-function getUserDisplayName(user: IAMUser | GoogleUser): string {
-  if ('userName' in user) {
-    return user.userName;
-  }
-  return user.primaryEmail;
-}
 
 export default function Permissions() {
   const { users = [], roles = [], credentials, googleCredentials, error } = useLoaderData<LoaderData>();
@@ -756,25 +767,33 @@ export default function Permissions() {
                                   {entity.type === 'user' ? (
                                     <>
                                       <User className="w-5 h-5 text-blue-400" />
-                                      <span className="text-blue-400">
-                                        {getUserDisplayName(entity as IAMUser | GoogleUser)}
-                                      </span>
+                                      <span className="text-blue-400">User</span>
                                     </>
                                   ) : (
                                     <>
                                       <Shield className="w-5 h-5 text-purple-400" />
-                                      <span className="text-purple-400">{(entity as IAMRole).roleName}</span>
+                                      <span className="text-purple-400">Role</span>
                                     </>
                                   )}
                                 </div>
                               </td>
                               <td className="px-6 py-5 whitespace-nowrap">
                                 <div className="flex items-center justify-center">
-                                  <img 
-                                    src={providerInfo.icon}
-                                    alt={providerInfo.label}
-                                    className="w-8 h-8 invert brightness-0"
-                                  />
+                                  {entity.provider === 'aws' ? (
+                                    <img 
+                                      src="/amazon-aws.svg"
+                                      alt="AWS"
+                                      className="w-8 h-8 invert brightness-0"
+                                    />
+                                  ) : entity.provider === 'google' ? (
+                                    <img 
+                                      src="/google-workspace.svg"
+                                      alt="Google"
+                                      className="h-12 invert brightness-0"
+                                    />
+                                  ) : (
+                                    <Cloud className="w-8 h-8 text-blue-400" />
+                                  )}
                                 </div>
                               </td>
                               <td className="px-6 py-5 font-medium text-white whitespace-nowrap">
@@ -831,7 +850,7 @@ export default function Permissions() {
                                       <div className="space-y-1">
                                         <div className="font-semibold text-white">Risk Factors</div>
                                         <ul className="list-disc list-inside space-y-1">
-                                          {entity?.riskAssessment?.factors.map((factor, i) => (
+                                          {entity?.riskAssessment?.factors?.map((factor, i) => (
                                             <li key={i} className="text-gray-300">{factor}</li>
                                           ))}
                                         </ul>
@@ -1003,7 +1022,10 @@ export default function Permissions() {
                                             <div className="flex justify-between items-center">
                                               <span className="text-gray-400 text-sm">Account Age</span>
                                               <span className="text-white text-sm">
-                                                {Math.floor((Date.now() - new Date(entity.createDate).getTime()) / (1000 * 60 * 60 * 24 * 30))} months
+                                                {entity.createDate ? 
+                                                  Math.floor((Date.now() - new Date(entity.createDate).getTime()) / (1000 * 60 * 60 * 24 * 30)) + ' months' :
+                                                  'N/A'
+                                                }
                                               </span>
                                             </div>
                                           </div>

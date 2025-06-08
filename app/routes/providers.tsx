@@ -251,21 +251,6 @@ function ProviderCard({
         )}
       </div>
 
-      {isConnected && accountDetails && (
-        <div className="mt-4 pt-4 border-t border-white/10">
-          {accountDetails.accountId && (
-            <p className="text-sm text-white/60">
-              Account ID: <span className="text-white">{accountDetails.accountId}</span>
-            </p>
-          )}
-          {accountDetails.arn && (
-            <p className="text-sm text-white/60 mt-1">
-              ARN: <span className="text-white">{accountDetails.arn}</span>
-            </p>
-          )}
-        </div>
-      )}
-
       <Modal
         isOpen={showDisconnectConfirm}
         onClose={() => setShowDisconnectConfirm(false)}
@@ -306,14 +291,6 @@ export default function ProvidersPage() {
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "google">("aws");
   const [googleError, setGoogleError] = useState<string | null>(null);
-  const [googleUsers, setGoogleUsers] = useState<NonNullable<GoogleCredentials["users"]>>([]);
-
-  // Initialize users from session if available
-  useEffect(() => {
-    if (initialGoogleCredentials?.users) {
-      setGoogleUsers(initialGoogleCredentials.users);
-    }
-  }, [initialGoogleCredentials]);
 
   const handleConnect = (provider: "aws" | "azure" | "okta" | "google") => {
     setSelectedProvider(provider);
@@ -382,11 +359,7 @@ export default function ProvidersPage() {
         throw new Error(data.details || data.error);
       }
 
-      // Update the users state with the fetched data
-      setGoogleUsers(data.users);
       setGoogleError(null);
-
-      // Reload the page to get the updated session state
       window.location.reload();
     } catch (error) {
       console.error("Error handling Google login:", error);
@@ -418,10 +391,6 @@ export default function ProvidersPage() {
             onConnect={() => handleConnect("aws")}
             onManage={() => handleManage("aws")}
             onDisconnect={handleDisconnect}
-            accountDetails={credentials.aws ? {
-              accountId: credentials.aws.accountId,
-              arn: credentials.aws.arn
-            } : undefined}
           />
 
           <ProviderCard
@@ -437,10 +406,6 @@ export default function ProvidersPage() {
                 />
               )
             }
-            accountDetails={initialGoogleCredentials ? {
-              accountId: initialGoogleCredentials.authuser,
-              arn: initialGoogleCredentials.access_token.slice(0, 20) + '...',
-            } : undefined}
           />
 
           <ProviderCard
@@ -459,47 +424,6 @@ export default function ProvidersPage() {
             onConnect={() => handleConnect("okta")}
           />
         </div>
-
-        {/* Display Google Users */}
-        {googleUsers && googleUsers.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-xl font-semibold text-white mb-4">Google Workspace Users</h2>
-            <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-white/10">
-                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Name</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Email</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Admin</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">2SV</th>
-                    <th className="px-4 py-3 text-left text-sm font-medium text-white/60">Org Unit</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {googleUsers.map((user) => (
-                    <tr key={user.id} className="border-b border-white/5 hover:bg-white/5">
-                      <td className="px-4 py-3 text-sm text-white">
-                        {user.name.fullName}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-white">
-                        {user.primaryEmail}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-white">
-                        {user.isAdmin ? "Yes" : "No"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-white">
-                        {user.isEnrolledIn2Sv ? "Yes" : "No"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-white">
-                        {user.orgUnitPath}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
 
         <Modal
           isOpen={showModal}
