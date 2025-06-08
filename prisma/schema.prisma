@@ -1,0 +1,20 @@
+model GoogleCredential {
+  id            String   @id @default(cuid())
+  accessToken   String
+  scope         String
+  authUser      String
+  expiresIn     Int
+  tokenType     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  users         Json?    // Store the users array as JSON
+  provider      String   @default("google")
+  type          String   @default("user")
+  userName      String   // The email of the authenticated user
+  lastUsed      DateTime @default(now())
+  policies      Json[]   // Store policies as JSON array
+  hasMFA        Boolean  @default(false)
+  riskAssessment Json?   // Store risk assessment as JSON
+
+  @@map("permissions") // Use the existing permissions table
+} 
