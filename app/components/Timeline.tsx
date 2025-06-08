@@ -44,7 +44,7 @@ export function Timeline({ scoreHistory, hasCredentials }: TimelineProps) {
           <h2 className="text-lg font-semibold text-white">Risk Score Timeline</h2>
         </div>
         <div className="text-center text-gray-400 py-8">
-          Connect your AWS account to view risk score history
+          Connect a provider to view risk score history
         </div>
       </div>
     );

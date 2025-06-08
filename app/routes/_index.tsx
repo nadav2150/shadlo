@@ -103,6 +103,13 @@ export const loader: LoaderFunction = async ({ request }) => {
     const awsData = await awsResponse.json();
     const googleData = await googleResponse.json();
     
+    console.log("Debug - Raw API Responses:", {
+      awsData,
+      googleData,
+      hasGoogleUsers: !!googleData.users?.length,
+      googleUserCount: googleData.users?.length
+    });
+    
     // Transform Google users to match AWS user format
     const transformedGoogleUsers = (googleData.users || []).map((user: any) => ({
       userName: user.primaryEmail,
@@ -124,12 +131,23 @@ export const loader: LoaderFunction = async ({ request }) => {
       }
     }));
     
+    console.log("Debug - Transformed Google Users:", {
+      transformedCount: transformedGoogleUsers.length,
+      sampleUser: transformedGoogleUsers[0]
+    });
+    
     // Combine users and roles from both services
     const combinedUsers = [
       ...(awsData.users || []),
       ...transformedGoogleUsers
     ];
     
+    console.log("Debug - Combined Users:", {
+      totalCount: combinedUsers.length,
+      awsCount: awsData.users?.length || 0,
+      googleCount: transformedGoogleUsers.length
+    });
+
     const combinedRoles = [
       ...(awsData.roles || []),
       ...(googleData.roles || []).map((role: any) => ({
@@ -208,7 +226,15 @@ const Index = () => {
           <div className="mt-4 bg-yellow-900/20 border border-yellow-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 text-yellow-400">
               <AlertCircle className="w-5 h-5" />
-              <span>AWS credentials not found. Please add your credentials in the Settings page.</span>
+              <span>No identity providers connected. Please add your credentials in the Providers page.</span>
+            </div>
+          </div>
+        )}
+        {!credentials.aws && credentials.google && (
+          <div className="mt-4 bg-blue-900/20 border border-blue-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-blue-400">
+              <CheckCircle className="w-5 h-5" />
+              <span>Connected to Google Workspace. AWS credentials not required.</span>
             </div>
           </div>
         )}

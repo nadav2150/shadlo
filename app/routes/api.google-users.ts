@@ -7,6 +7,11 @@ export const loader: LoaderFunction = async ({ request }) => {
   try {
     const googleCredentials = await getGoogleCredentials(request);
     
+    console.log("Debug - Google API:", {
+      hasCredentials: !!googleCredentials?.access_token,
+      credentialsLength: googleCredentials?.access_token?.length
+    });
+    
     if (!googleCredentials?.access_token) {
       return json({ error: "No Google credentials found" }, { status: 401 });
     }
@@ -24,6 +29,12 @@ export const loader: LoaderFunction = async ({ request }) => {
       orderBy: 'email',
       projection: 'full',
       viewType: 'admin_view'
+    });
+
+    console.log("Debug - Google API Response:", {
+      hasUsers: !!response.data.users?.length,
+      userCount: response.data.users?.length,
+      sampleUser: response.data.users?.[0]
     });
 
     const users = response.data.users?.map((user: any) => ({
@@ -58,9 +69,15 @@ export const loader: LoaderFunction = async ({ request }) => {
       })
     })) || [];
 
+    console.log("Debug - Processed Google Users:", {
+      processedCount: users.length,
+      sampleUser: users[0]
+    });
+
     return json({ 
       users,
-      userCount: users.length
+      userCount: users.length,
+      credentials: googleCredentials // Include credentials in response
     });
   } catch (error: any) {
     console.error("Error fetching Google users:", error);

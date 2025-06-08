@@ -73,7 +73,7 @@ export function Stats({ users, roles, shadowPermissions, hasCredentials }: Stats
               </div>
             </div>
           ) : (
-            <div>Connect AWS to view security metrics</div>
+            <div>Connect a provider to view security metrics</div>
           )}
         </div>
       </div>
@@ -114,7 +114,7 @@ export function Stats({ users, roles, shadowPermissions, hasCredentials }: Stats
           </div>
         ) : (
           <div className="text-center text-xs text-gray-400">
-            Connect AWS to view risk distribution
+            Connect a provider to view risk distribution
           </div>
         )}
       </div>
@@ -129,7 +129,7 @@ export function Stats({ users, roles, shadowPermissions, hasCredentials }: Stats
               <div>{roles.length} Roles</div>
             </div>
           ) : (
-            <div>Connect AWS to view entities</div>
+            <div>Connect a provider to view entities</div>
           )}
         </div>
       </div>
