@@ -64,8 +64,7 @@ export const action: ActionFunction = async ({ request }) => {
       scope: formData.get("scope")?.toString() || '',
       authuser: formData.get("authuser")?.toString() || '',
       expires_in: Number(formData.get("expires_in")) || 0,
-      token_type: formData.get("token_type")?.toString() || '',
-      users: users
+      token_type: formData.get("token_type")?.toString() || ''
     };
 
     // Store credentials in session

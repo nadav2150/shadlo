@@ -46,6 +46,22 @@ interface IAMUser {
   };
 }
 
+interface GoogleApiUser {
+  id: string;
+  primaryEmail: string;
+  name: {
+    fullName: string;
+    givenName: string;
+    familyName: string;
+  };
+  isAdmin: boolean;
+  isEnforcedIn2Sv: boolean;
+  isEnrolledIn2Sv: boolean;
+  isMailboxSetup: boolean;
+  orgUnitPath: string;
+  lastLoginTime: string | null;
+}
+
 interface GoogleUser {
   id: string;
   primaryEmail: string;
@@ -115,10 +131,6 @@ interface LoaderData {
     accessKeyId: string;
     region: string;
   } | null;
-  googleCredentials?: {
-    access_token: string;
-    users: GoogleUser[];
-  } | null;
 }
 
 export const loader: LoaderFunction = async ({ request }) => {
@@ -130,47 +142,74 @@ export const loader: LoaderFunction = async ({ request }) => {
     // Get the cookie header from the original request
     const cookieHeader = request.headers.get("Cookie");
     
-    // Fetch both AWS and Google data in parallel
-    const [awsResponse, googleCredentials] = await Promise.all([
-      fetch(`${baseUrl}/api/iam-entities`, {
+    // Initialize empty data
+    let awsData = { users: [], roles: [], credentials: null, error: null };
+    let googleUsers: GoogleUser[] = [];
+    
+    // Try to fetch AWS data
+    try {
+      const awsResponse = await fetch(`${baseUrl}/api/iam-entities`, {
         headers: {
           Cookie: cookieHeader || "",
         },
-      }),
-      getGoogleCredentials(request)
-    ]);
-    
-    const awsData = await awsResponse.json();
-    console.log("Debug - API Response:", { 
-      status: awsResponse.status, 
-      ok: awsResponse.ok, 
-      hasCredentials: !!awsData.credentials,
-      userCount: awsData.users?.length,
-      roleCount: awsData.roles?.length,
-      hasGoogleCredentials: !!googleCredentials
-    });
-
-    // Transform Google users to match the common interface
-    const googleUsers: GoogleUser[] = googleCredentials?.users?.map(user => ({
-      ...user,
-      provider: 'google' as const,
-      type: 'user' as const,
-      createDate: new Date().toISOString(), // Google API doesn't provide creation date
-      policies: [], // Google API doesn't provide policies in the same way
-      hasMFA: user.isEnrolledIn2Sv,
-      riskAssessment: {
-        riskLevel: user.isEnrolledIn2Sv ? 'low' : 'high',
-        score: user.isEnrolledIn2Sv ? 90 : 30,
-        lastUsedScore: 100,
-        permissionScore: user.isAdmin ? 50 : 90,
-        identityScore: user.isEnrolledIn2Sv ? 90 : 30,
-        factors: [
-          ...(user.isEnrolledIn2Sv ? [] : ['No 2SV']),
-          ...(user.isAdmin ? ['Admin Access'] : []),
-        ],
-        shadowPermissions: []
+      });
+      
+      if (awsResponse.ok) {
+        awsData = await awsResponse.json();
+      } else {
+        console.log("AWS not connected or error:", await awsResponse.text());
       }
-    })) || [];
+    } catch (error) {
+      console.log("Error fetching AWS data:", error);
+      // Continue without AWS data
+    }
+
+    // Try to fetch Google data
+    try {
+      const googleResponse = await fetch(`${baseUrl}/api/google-users`, {
+        headers: {
+          Cookie: cookieHeader || "",
+        },
+      });
+      
+      if (googleResponse.ok) {
+        const googleData = await googleResponse.json();
+        // Transform Google users to match the common interface
+        googleUsers = googleData.users?.map((user: GoogleApiUser) => ({
+          ...user,
+          provider: 'google' as const,
+          type: 'user' as const,
+          createDate: new Date().toISOString(), // Google API doesn't provide creation date
+          lastUsed: user.lastLoginTime || undefined,
+          policies: [], // Google API doesn't provide policies in the same way
+          hasMFA: user.isEnrolledIn2Sv,
+          riskAssessment: {
+            riskLevel: user.isEnrolledIn2Sv ? 'low' : 'high',
+            score: user.isEnrolledIn2Sv ? 90 : 30,
+            lastUsedScore: 100,
+            permissionScore: user.isAdmin ? 50 : 90,
+            identityScore: user.isEnrolledIn2Sv ? 90 : 30,
+            factors: [
+              ...(user.isEnrolledIn2Sv ? [] : ['No 2SV']),
+              ...(user.isAdmin ? ['Admin Access'] : []),
+            ],
+            shadowPermissions: []
+          }
+        })) || [];
+      } else {
+        console.log("Google not connected or error:", await googleResponse.text());
+      }
+    } catch (error) {
+      console.log("Error fetching Google users:", error);
+      // Continue without Google data
+    }
+    
+    console.log("Debug - API Response:", { 
+      hasAwsCredentials: !!awsData.credentials,
+      awsUserCount: awsData.users?.length,
+      awsRoleCount: awsData.roles?.length,
+      googleUserCount: googleUsers.length
+    });
     
     // Combine AWS and Google users
     const allUsers = [
@@ -183,10 +222,6 @@ export const loader: LoaderFunction = async ({ request }) => {
       users: allUsers,
       roles: awsData.roles || [],
       credentials: awsData.credentials || null,
-      googleCredentials: googleCredentials ? {
-        access_token: googleCredentials.access_token,
-        users: googleUsers
-      } : null,
       error: awsData.error || null
     });
   } catch (error) {
@@ -196,7 +231,6 @@ export const loader: LoaderFunction = async ({ request }) => {
         users: [], 
         roles: [], 
         credentials: null,
-        googleCredentials: null,
         error: error instanceof Error ? error.message : "Failed to fetch IAM data"
       }
     );
@@ -334,7 +368,7 @@ type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' |
 type SortDirection = 'asc' | 'desc';
 
 export default function Permissions() {
-  const { users = [], roles = [], credentials, googleCredentials, error } = useLoaderData<LoaderData>();
+  const { users = [], roles = [], credentials, error } = useLoaderData<LoaderData>();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
@@ -344,7 +378,7 @@ export default function Permissions() {
 
   // Check which providers are connected
   const isAwsConnected = !!credentials?.accessKeyId;
-  const isGoogleConnected = !!googleCredentials?.access_token;
+  const isGoogleConnected = users.some(user => user.provider === 'google');
   const hasConnectedProviders = isAwsConnected || isGoogleConnected;
 
   // Helper function to toggle row expansion
@@ -496,49 +530,21 @@ export default function Permissions() {
       );
     }
 
-    const statusMessages = [];
-    if (!isAwsConnected) {
-      statusMessages.push(
-        <div key="aws" className="flex items-center gap-2 text-gray-400">
-          <Cloud className="w-5 h-5" />
-          <span>AWS not connected</span>
-        </div>
-      );
-    }
-    if (!isGoogleConnected) {
-      statusMessages.push(
-        <div key="google" className="flex items-center gap-2 text-gray-400">
-          <Mail className="w-5 h-5" />
-          <span>Google not connected</span>
-        </div>
-      );
-    }
-
-    if (statusMessages.length > 0) {
-      return (
-        <div className="mb-6 bg-[#1a1f28] border border-gray-800 rounded-xl p-4">
-          <div className="flex flex-col gap-2">
-            <div className="text-white font-medium">Connected Providers:</div>
-            <div className="flex flex-wrap gap-4">
-              {statusMessages}
-            </div>
-            <a 
-              href="/providers" 
-              className="text-blue-400 hover:text-blue-300 flex items-center gap-2 w-fit mt-2"
-            >
-              <Settings className="w-4 h-4" />
-              Manage Providers
-            </a>
-          </div>
-        </div>
-      );
-    }
-
     return null;
   };
 
   return (
     <div className="flex flex-col h-full bg-[#0f1117]">
+      {/* Header Section */}
+      <div className="px-8 py-6 border-b border-gray-800">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold text-white">Permissions Management</h1>
+          <p className="text-gray-400">
+            View and manage user permissions across your connected identity providers
+          </p>
+        </div>
+      </div>
+
       {/* Connection Status */}
       <ConnectionStatus />
 

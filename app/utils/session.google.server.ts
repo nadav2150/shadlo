@@ -7,20 +7,6 @@ export interface GoogleCredentials {
   authuser: string;
   expires_in: number;
   token_type: string;
-  users?: Array<{
-    id: string;
-    primaryEmail: string;
-    name: {
-      fullName: string;
-      givenName: string;
-      familyName: string;
-    };
-    isAdmin: boolean;
-    isEnforcedIn2Sv: boolean;
-    isEnrolledIn2Sv: boolean;
-    isMailboxSetup: boolean;
-    orgUnitPath: string;
-  }>;
 }
 
 // Create a separate session storage for Google credentials
