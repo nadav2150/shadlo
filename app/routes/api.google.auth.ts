@@ -1,5 +1,6 @@
 import { json, type ActionFunction } from "@remix-run/node";
 import { google } from 'googleapis';
+import { setGoogleCredentials, type GoogleCredentials } from "~/utils/session.google.server";
 
 interface GoogleUser {
   id: string;
@@ -37,12 +38,12 @@ export const action: ActionFunction = async ({ request }) => {
     
     // Fetch users from Google Workspace
     const response = await admin.users.list({
-      customer: 'my_customer', // This will fetch users from your organization
+      customer: 'my_customer',
       maxResults: 100,
       orderBy: 'email',
     });
 
-    const users: GoogleUser[] = response.data.users?.map((user: any) => ({
+    const users = response.data.users?.map((user: any) => ({
       id: user.id || '',
       primaryEmail: user.primaryEmail || '',
       name: {
@@ -57,25 +58,37 @@ export const action: ActionFunction = async ({ request }) => {
       orgUnitPath: user.orgUnitPath || '',
     })) || [];
 
-    // Log the credentials and user count (in a real app, you'd want to store these securely)
-    console.log("Received Google credentials:", {
-      access_token: accessToken?.slice(0, 10) + '...', // Only log a portion of the token
-      scope: formData.get("scope"),
-      authuser: formData.get("authuser"),
-      expires_in: formData.get("expires_in"),
-      token_type: formData.get("token_type"),
-    });
+    // Prepare credentials for session storage
+    const credentials: GoogleCredentials = {
+      access_token: accessToken,
+      scope: formData.get("scope")?.toString() || '',
+      authuser: formData.get("authuser")?.toString() || '',
+      expires_in: Number(formData.get("expires_in")) || 0,
+      token_type: formData.get("token_type")?.toString() || '',
+      users: users
+    };
+
+    // Store credentials in session
+    const cookieHeader = await setGoogleCredentials(request, credentials);
+
+    // Log success (without sensitive data)
     console.log(`Successfully fetched ${users.length} users from Google Workspace`);
 
-    return json({ 
-      success: true,
-      users,
-      userCount: users.length
-    });
+    return json(
+      { 
+        success: true,
+        users,
+        userCount: users.length
+      },
+      {
+        headers: {
+          "Set-Cookie": cookieHeader
+        }
+      }
+    );
   } catch (error: any) {
     console.error("Error processing Google credentials:", error);
     
-    // Log detailed error information
     if (error.response) {
       console.error("Google API Error Details:", {
         status: error.response.status,

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLoaderData, useActionData, useNavigation } from "@remix-run/react";
 import { json, type LoaderFunction, type ActionFunction } from "@remix-run/node";
 import { 
@@ -18,14 +18,18 @@ import { AwsCredentialsForm } from "~/components/AwsCredentialsForm";
 import { getAwsCredentials, setAwsCredentials, clearAwsCredentials } from "~/utils/session.server";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
+import { getGoogleCredentials, type GoogleCredentials } from "~/utils/session.google.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
   const awsCredentials = await getAwsCredentials(request);
-  return json({ 
+  const googleCredentials = await getGoogleCredentials(request);
+  
+  return json({
     credentials: {
       aws: awsCredentials
     },
-    googleClientId: process.env.GOOGLE_CLIENT_ID
+    googleClientId: process.env.GOOGLE_CLIENT_ID,
+    googleCredentials
   });
 };
 
@@ -296,26 +300,20 @@ function ProviderCard({
 }
 
 export default function ProvidersPage() {
-  const { credentials, googleClientId } = useLoaderData<typeof loader>();
+  const { credentials, googleClientId, googleCredentials: initialGoogleCredentials } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "google">("aws");
   const [googleError, setGoogleError] = useState<string | null>(null);
-  const [googleUsers, setGoogleUsers] = useState<Array<{
-    id: string;
-    primaryEmail: string;
-    name: {
-      fullName: string;
-      givenName: string;
-      familyName: string;
-    };
-    isAdmin: boolean;
-    isEnforcedIn2Sv: boolean;
-    isEnrolledIn2Sv: boolean;
-    isMailboxSetup: boolean;
-    orgUnitPath: string;
-  }>>([]);
+  const [googleUsers, setGoogleUsers] = useState<NonNullable<GoogleCredentials["users"]>>([]);
+
+  // Initialize users from session if available
+  useEffect(() => {
+    if (initialGoogleCredentials?.users) {
+      setGoogleUsers(initialGoogleCredentials.users);
+    }
+  }, [initialGoogleCredentials]);
 
   const handleConnect = (provider: "aws" | "azure" | "okta" | "google") => {
     setSelectedProvider(provider);
@@ -364,7 +362,7 @@ export default function ProvidersPage() {
       // Send credentials to server
       const formData = new FormData();
       Object.entries(credentialResponse).forEach(([key, value]) => {
-        if (value != null) {  // Check for both null and undefined
+        if (value != null) {
           formData.append(key, String(value));
         }
       });
@@ -387,6 +385,9 @@ export default function ProvidersPage() {
       // Update the users state with the fetched data
       setGoogleUsers(data.users);
       setGoogleError(null);
+
+      // Reload the page to get the updated session state
+      window.location.reload();
     } catch (error) {
       console.error("Error handling Google login:", error);
       setGoogleError(error instanceof Error ? error.message : "Failed to connect Google account");
@@ -427,13 +428,19 @@ export default function ProvidersPage() {
             name="Google"
             description="Connect your Google Workspace to manage users and groups"
             icon={<Mail className="w-6 h-6 text-red-400" />}
-            isConnected={false}
+            isConnected={!!initialGoogleCredentials}
             customConnectButton={
-              <GoogleLoginButton
-                onSuccess={handleGoogleSuccess}
-                onError={handleGoogleError}
-              />
+              !initialGoogleCredentials && (
+                <GoogleLoginButton
+                  onSuccess={handleGoogleSuccess}
+                  onError={handleGoogleError}
+                />
+              )
             }
+            accountDetails={initialGoogleCredentials ? {
+              accountId: initialGoogleCredentials.authuser,
+              arn: initialGoogleCredentials.access_token.slice(0, 20) + '...',
+            } : undefined}
           />
 
           <ProviderCard
@@ -454,7 +461,7 @@ export default function ProvidersPage() {
         </div>
 
         {/* Display Google Users */}
-        {googleUsers.length > 0 && (
+        {googleUsers && googleUsers.length > 0 && (
           <div className="mt-8">
             <h2 className="text-xl font-semibold text-white mb-4">Google Workspace Users</h2>
             <div className="bg-white/5 border border-white/10 rounded-lg overflow-hidden">
