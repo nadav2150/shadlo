@@ -86,33 +86,83 @@ export const loader: LoaderFunction = async ({ request }) => {
     // Get the cookie header from the original request
     const cookieHeader = request.headers.get("Cookie");
     
-    // Make the request to the IAM API using the full URL and forwarding cookies
-    const response = await fetch(`${baseUrl}/api/iam-entities`, {
-      headers: {
-        Cookie: cookieHeader || "",
-      },
-    });
+    // Make parallel requests to both AWS and Google APIs
+    const [awsResponse, googleResponse] = await Promise.all([
+      fetch(`${baseUrl}/api/iam-entities`, {
+        headers: {
+          Cookie: cookieHeader || "",
+        },
+      }),
+      fetch(`${baseUrl}/api/google-users`, {
+        headers: {
+          Cookie: cookieHeader || "",
+        },
+      })
+    ]);
     
-    const data = await response.json();
+    const awsData = await awsResponse.json();
+    const googleData = await googleResponse.json();
     
-    // Generate score history using the fetched data
-    const scoreHistory = generateScoreHistory(data.users || [], data.roles || []);
+    // Transform Google users to match AWS user format
+    const transformedGoogleUsers = (googleData.users || []).map((user: any) => ({
+      userName: user.primaryEmail,
+      createDate: new Date().toISOString(), // Google API doesn't provide creation date
+      lastUsed: user.lastLoginTime || undefined,
+      policies: [], // Add empty policies array to match AWS format
+      hasMFA: user.isEnrolledIn2Sv,
+      accessKeys: [], // Add empty accessKeys array to match AWS format
+      provider: 'google' as const,
+      type: 'user' as const,
+      riskAssessment: {
+        riskLevel: user.riskAssessment.level.toLowerCase(), // Convert to lowercase to match AWS format
+        score: user.riskAssessment.score,
+        factors: user.riskAssessment.factors,
+        shadowPermissions: [],
+        lastUsedScore: user.lastLoginTime ? 0 : 5,
+        permissionScore: user.isAdmin ? 5 : 0,
+        identityScore: user.isEnrolledIn2Sv ? 0 : 2
+      }
+    }));
+    
+    // Combine users and roles from both services
+    const combinedUsers = [
+      ...(awsData.users || []),
+      ...transformedGoogleUsers
+    ];
+    
+    const combinedRoles = [
+      ...(awsData.roles || []),
+      ...(googleData.roles || []).map((role: any) => ({
+        ...role,
+        provider: 'google',
+        policies: [] // Add empty policies array to match AWS format
+      }))
+    ];
+
+    // Generate score history using the combined data
+    const scoreHistory = generateScoreHistory(combinedUsers, combinedRoles);
 
     return json({ 
-      credentials: data.credentials,
-      users: data.users || [],
-      roles: data.roles || [],
+      credentials: {
+        aws: awsData.credentials,
+        google: googleData.credentials
+      },
+      users: combinedUsers,
+      roles: combinedRoles,
       scoreHistory,
-      error: data.error || null
+      error: awsData.error || googleData.error || null
     });
   } catch (error) {
     console.error("Error fetching IAM data:", error);
     return json({ 
-      credentials: null,
+      credentials: {
+        aws: null,
+        google: null
+      },
       users: [],
       roles: [],
       scoreHistory: [],
-      error: "Failed to fetch IAM data. Please check your AWS credentials."
+      error: "Failed to fetch IAM data. Please check your credentials."
     });
   }
 };
@@ -121,7 +171,7 @@ const Index = () => {
   const { credentials, users, roles, scoreHistory, error } = useLoaderData<typeof loader>();
 
   // Calculate shadow permissions for all entities and deduplicate them
-  const shadowPermissions: ShadowPermissionRisk[] = credentials ? [
+  const shadowPermissions: ShadowPermissionRisk[] = (credentials.aws || credentials.google) ? [
     ...users.map((user: UserDetails) => calculateRiskScore(user).shadowPermissions),
     ...roles.map((role: RoleDetails) => calculateRiskScore(role).shadowPermissions)
   ]
@@ -140,7 +190,8 @@ const Index = () => {
   };
 
   const connectedServices = {
-    AWS: !!credentials?.accessKeyId,
+    AWS: !!credentials.aws?.accessKeyId,
+    Google: !!credentials.google,
     Azure: false,
     Okta: false
   };
@@ -153,7 +204,7 @@ const Index = () => {
         <p className="text-gray-300 text-lg">
           Monitor and manage your cloud security posture across all platforms
         </p>
-        {!credentials && (
+        {!credentials.aws && !credentials.google && (
           <div className="mt-4 bg-yellow-900/20 border border-yellow-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 text-yellow-400">
               <AlertCircle className="w-5 h-5" />
@@ -176,7 +227,7 @@ const Index = () => {
         users={users} 
         roles={roles} 
         shadowPermissions={shadowPermissions} 
-        hasCredentials={!!credentials}
+        hasCredentials={!!credentials.aws || !!credentials.google}
       />
 
       {/* Main Content Grid: Timeline and Service Connections */}
@@ -185,7 +236,7 @@ const Index = () => {
         <div className="xl:col-span-2">
           <Timeline 
             scoreHistory={scoreHistory}
-            hasCredentials={!!credentials}
+            hasCredentials={!!credentials.aws || !!credentials.google}
           />
         </div>
         
