@@ -5,6 +5,7 @@ import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
 import { useState, useMemo } from "react";
 import { getGoogleCredentials } from "~/utils/session.google.server";
+import { calculateRiskScore } from "~/lib/iam/google-risk-assessment";
 
 interface Policy {
   name: string;
@@ -60,6 +61,9 @@ interface GoogleApiUser {
   isMailboxSetup: boolean;
   orgUnitPath: string;
   lastLoginTime: string | null;
+  suspended?: boolean;
+  isDelegatedAdmin?: boolean;
+  changePasswordAtNextLogin?: boolean;
 }
 
 interface GoogleUser {
@@ -82,7 +86,7 @@ interface GoogleUser {
   policies: Policy[];
   hasMFA: boolean;
   riskAssessment?: {
-    riskLevel: 'low' | 'medium' | 'high';
+    riskLevel: 'low' | 'medium' | 'high' | 'critical';
     score: number;
     lastUsedScore: number;
     permissionScore: number;
@@ -175,27 +179,36 @@ export const loader: LoaderFunction = async ({ request }) => {
       if (googleResponse.ok) {
         const googleData = await googleResponse.json();
         // Transform Google users to match the common interface
-        googleUsers = googleData.users?.map((user: GoogleApiUser) => ({
-          ...user,
-          provider: 'google' as const,
-          type: 'user' as const,
-          createDate: new Date().toISOString(), // Google API doesn't provide creation date
-          lastUsed: user.lastLoginTime || undefined,
-          policies: [], // Google API doesn't provide policies in the same way
-          hasMFA: user.isEnrolledIn2Sv,
-          riskAssessment: {
-            riskLevel: user.isEnrolledIn2Sv ? 'low' : 'high',
-            score: user.isEnrolledIn2Sv ? 90 : 30,
-            lastUsedScore: 100,
-            permissionScore: user.isAdmin ? 50 : 90,
-            identityScore: user.isEnrolledIn2Sv ? 90 : 30,
-            factors: [
-              ...(user.isEnrolledIn2Sv ? [] : ['No 2SV']),
-              ...(user.isAdmin ? ['Admin Access'] : []),
-            ],
-            shadowPermissions: []
-          }
-        })) || [];
+        googleUsers = googleData.users?.map((user: GoogleApiUser) => {
+          const riskAssessment = calculateRiskScore({
+            lastLoginTime: user.lastLoginTime || null,
+            suspended: user.suspended || false,
+            isAdmin: user.isAdmin || false,
+            isDelegatedAdmin: user.isDelegatedAdmin || false,
+            changePasswordAtNextLogin: user.changePasswordAtNextLogin || false,
+            isMailboxSetup: user.isMailboxSetup || false,
+            isEnrolledIn2Sv: user.isEnrolledIn2Sv || false
+          });
+
+          return {
+            ...user,
+            provider: 'google' as const,
+            type: 'user' as const,
+            createDate: new Date().toISOString(), // Google API doesn't provide creation date
+            lastUsed: user.lastLoginTime || undefined,
+            policies: [], // Google API doesn't provide policies in the same way
+            hasMFA: user.isEnrolledIn2Sv,
+            riskAssessment: {
+              riskLevel: riskAssessment.level.toLowerCase() as 'low' | 'medium' | 'high' | 'critical',
+              score: riskAssessment.score,
+              lastUsedScore: user.lastLoginTime ? 0 : 3, // Add points for never logged in
+              permissionScore: user.isAdmin ? 2 : 0, // Add points for admin access
+              identityScore: user.isEnrolledIn2Sv ? 0 : 1, // Add points for no 2SV
+              factors: riskAssessment.factors,
+              shadowPermissions: [] // Google doesn't have shadow permissions concept
+            }
+          };
+        }) || [];
       } else {
         console.log("Google not connected or error:", await googleResponse.text());
       }
@@ -398,6 +411,10 @@ export default function Permissions() {
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return 'Invalid Date';
+      // Check if date is Unix epoch (1970-01-01)
+      if (date.getTime() === 0 || dateStr.startsWith('1970-01-01')) {
+        return 'Never';
+      }
       return date.toLocaleDateString();
     } catch {
       return 'Invalid Date';

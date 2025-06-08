@@ -1,6 +1,7 @@
 import { json, type LoaderFunction } from "@remix-run/node";
 import { google } from 'googleapis';
 import { getGoogleCredentials } from "~/utils/session.google.server";
+import { calculateRiskScore } from "~/lib/iam/google-risk-assessment";
 
 export const loader: LoaderFunction = async ({ request }) => {
   try {
@@ -34,11 +35,23 @@ export const loader: LoaderFunction = async ({ request }) => {
         familyName: user.name?.familyName || '',
       },
       isAdmin: user.isAdmin || false,
+      isDelegatedAdmin: user.isDelegatedAdmin || false,
       isEnforcedIn2Sv: user.isEnforcedIn2Sv || false,
       isEnrolledIn2Sv: user.isEnrolledIn2Sv || false,
       isMailboxSetup: user.isMailboxSetup || false,
       orgUnitPath: user.orgUnitPath || '',
-      lastLoginTime: user.lastLoginTime || null
+      lastLoginTime: user.lastLoginTime || null,
+      suspended: user.suspended || false,
+      changePasswordAtNextLogin: user.changePasswordAtNextLogin || false,
+      riskAssessment: calculateRiskScore({
+        lastLoginTime: user.lastLoginTime || null,
+        suspended: user.suspended || false,
+        isAdmin: user.isAdmin || false,
+        isDelegatedAdmin: user.isDelegatedAdmin || false,
+        changePasswordAtNextLogin: user.changePasswordAtNextLogin || false,
+        isMailboxSetup: user.isMailboxSetup || false,
+        isEnrolledIn2Sv: user.isEnrolledIn2Sv || false
+      })
     })) || [];
 
     return json({ 
