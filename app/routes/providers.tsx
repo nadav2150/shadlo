@@ -18,7 +18,7 @@ import { AwsCredentialsForm } from "~/components/AwsCredentialsForm";
 import { getAwsCredentials, setAwsCredentials, clearAwsCredentials } from "~/utils/session.server";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
-import { getGoogleCredentials, type GoogleCredentials } from "~/utils/session.google.server";
+import { getGoogleCredentials, clearGoogleCredentials, type GoogleCredentials } from "~/utils/session.google.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
   const awsCredentials = await getAwsCredentials(request);
@@ -79,6 +79,16 @@ export const action: ActionFunction = async ({ request }) => {
       const cookieHeader = await clearAwsCredentials(request);
       return json(
         { success: true, message: "AWS credentials disconnected successfully" },
+        {
+          headers: cookieHeader ? {
+            "Set-Cookie": cookieHeader
+          } : undefined
+        }
+      );
+    } else if (provider === "google") {
+      const cookieHeader = await clearGoogleCredentials(request);
+      return json(
+        { success: true, message: "Google credentials disconnected successfully" },
         {
           headers: cookieHeader ? {
             "Set-Cookie": cookieHeader
@@ -323,6 +333,27 @@ export default function ProvidersPage() {
     }
   };
 
+  const handleGoogleDisconnect = async () => {
+    const formData = new FormData();
+    formData.append("intent", "disconnect");
+    formData.append("provider", "google");
+    
+    try {
+      const response = await fetch("/providers", {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to disconnect Google account");
+      }
+      
+      window.location.reload();
+    } catch (error) {
+      console.error("Error disconnecting Google:", error);
+    }
+  };
+
   const handleClose = () => {
     setShowModal(false);
   };
@@ -398,6 +429,7 @@ export default function ProvidersPage() {
             description="Connect your Google Workspace to manage users and groups"
             icon={<Mail className="w-6 h-6 text-red-400" />}
             isConnected={!!initialGoogleCredentials}
+            onDisconnect={handleGoogleDisconnect}
             customConnectButton={
               !initialGoogleCredentials && (
                 <GoogleLoginButton
