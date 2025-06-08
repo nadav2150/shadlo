@@ -402,7 +402,7 @@ export default function Permissions() {
       if (isNaN(date.getTime())) return 'Invalid Date';
       // Check if date is Unix epoch (1970-01-01)
       if (date.getTime() === 0 || dateStr.startsWith('1970-01-01')) {
-        return 'Never';
+        return 'N/A';
       }
       return date.toLocaleDateString();
     } catch {
@@ -791,12 +791,12 @@ export default function Permissions() {
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <span className="text-gray-300">
-                                  {entity.createDate ? new Date(entity.createDate).toLocaleDateString() : 'N/A'}
+                                  {formatDate(entity.createDate)}
                                 </span>
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <span className="text-gray-300">
-                                  {entity.lastUsed ? new Date(entity.lastUsed).toLocaleDateString() : 'Never'}
+                                  {formatDate(entity.lastUsed)}
                                 </span>
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
@@ -886,10 +886,10 @@ export default function Permissions() {
                                                   <div className="text-gray-400">{policy.description}</div>
                                                 )}
                                                 <div className="text-gray-500">
-                                                  Created: {policy.createDate ? new Date(policy.createDate).toLocaleDateString() : 'Unknown'}
+                                                  Created: {formatDate(policy.createDate)}
                                                 </div>
                                                 <div className="text-gray-500">
-                                                  Updated: {policy.updateDate ? new Date(policy.updateDate).toLocaleDateString() : 'Unknown'}
+                                                  Updated: {formatDate(policy.updateDate)}
                                                 </div>
                                               </div>
                                             </div>
