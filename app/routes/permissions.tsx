@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Settings, Cloud, Mail } from "lucide-react";
+import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Settings, Cloud, Mail, ChevronUp } from "lucide-react";
 import { useLoaderData } from "@remix-run/react";
 import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
@@ -414,6 +414,7 @@ export default function Permissions() {
   const [sortField, setSortField] = useState<SortField>('created');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [riskFactorFilter, setRiskFactorFilter] = useState<string | null>(null);
+  const [showAllRiskFactors, setShowAllRiskFactors] = useState(false);
 
   // Check which providers are connected
   const isAwsConnected = !!credentials?.accessKeyId;
@@ -877,10 +878,15 @@ export default function Permissions() {
               <span className="text-sm font-medium text-gray-300">Quick Risk Factor Filters</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {Array.from(getAllRiskFactors().entries()).map(([key, factor]) => {
+              {Array.from(getAllRiskFactors().entries()).map(([key, factor], index) => {
                 const isActive = riskFactorFilter === key || riskFactorFilter === `dynamic-${key}`;
                 const isDynamic = !['no-mfa', 'never-logged-in', 'no-activity', 'admin-access', 'suspended', 'high-risk'].includes(key);
                 const filterKey = isDynamic ? `dynamic-${key}` : key;
+                
+                // Show only first 5 badges unless showAllRiskFactors is true
+                if (!showAllRiskFactors && index >= 5) {
+                  return null;
+                }
                 
                 // Get color classes based on factor color
                 const getColorClasses = (color: string, isActive: boolean) => {
@@ -918,6 +924,26 @@ export default function Permissions() {
                   </button>
                 );
               })}
+
+              {/* Show More/Less Button */}
+              {getAllRiskFactors().size > 5 && (
+                <button
+                  onClick={() => setShowAllRiskFactors(!showAllRiskFactors)}
+                  className="inline-flex items-center gap-1 px-3 py-1 bg-gray-900/30 border border-gray-500/30 rounded-full text-xs font-medium text-gray-300 hover:bg-gray-900/50 hover:border-gray-500/50 transition-all duration-200 hover:scale-105"
+                >
+                  {showAllRiskFactors ? (
+                    <>
+                      <ChevronUp className="w-3 h-3" />
+                      Show Less
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3" />
+                      +{getAllRiskFactors().size - 5} More
+                    </>
+                  )}
+                </button>
+              )}
 
               {/* Clear Filters */}
               <button
