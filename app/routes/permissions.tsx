@@ -413,6 +413,7 @@ export default function Permissions() {
   const [providerFilter, setProviderFilter] = useState<"all" | "aws" | "google">("all");
   const [sortField, setSortField] = useState<SortField>('created');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [riskFactorFilter, setRiskFactorFilter] = useState<string | null>(null);
 
   // Check which providers are connected
   const isAwsConnected = !!credentials?.accessKeyId;
@@ -432,6 +433,18 @@ export default function Permissions() {
       return date.toLocaleDateString();
     } catch {
       return 'Invalid Date';
+    }
+  };
+
+  // Helper function to check if user is inactive (no activity for 90+ days)
+  const isInactive = (lastUsed: string): boolean => {
+    try {
+      const lastUsedDate = new Date(lastUsed);
+      const now = new Date();
+      const daysSinceLastActivity = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+      return daysSinceLastActivity >= 90; // Consider inactive after 90 days
+    } catch {
+      return false;
     }
   };
 
@@ -473,6 +486,29 @@ export default function Permissions() {
     // Apply provider filter
     if (providerFilter !== 'all') {
       filtered = filtered.filter(entity => entity.provider === providerFilter);
+    }
+
+    // Apply risk factor filter
+    if (riskFactorFilter) {
+      filtered = filtered.filter(entity => {
+        switch (riskFactorFilter) {
+          case 'no-mfa':
+            return entity.type === 'user' && !(entity as IAMUser).hasMFA;
+          case 'never-logged-in':
+            return entity.type === 'user' && !entity.lastUsed;
+          case 'no-activity':
+            return entity.type === 'user' && entity.lastUsed && isInactive(entity.lastUsed);
+          case 'admin-access':
+            return entity.type === 'user' && entity.provider === 'google' && (entity as GoogleUser).isAdmin;
+          case 'suspended':
+            return entity.type === 'user' && entity.provider === 'google' && 
+              (entity as GoogleUser).riskAssessment?.factors?.some(factor => factor.includes('suspended'));
+          case 'high-risk':
+            return entity.riskAssessment?.riskLevel === 'high' || entity.riskAssessment?.riskLevel === 'critical';
+          default:
+            return true;
+        }
+      });
     }
 
     // Sort entities
@@ -545,7 +581,7 @@ export default function Permissions() {
 
       return 0;
     });
-  }, [users, roles, searchQuery, typeFilter, riskFilter, providerFilter, sortField, sortDirection]);
+  }, [users, roles, searchQuery, typeFilter, riskFilter, providerFilter, riskFactorFilter, sortField, sortDirection]);
 
   // Calculate total access keys safely
   const totalAccessKeys = users?.reduce((acc, user) => {
@@ -705,6 +741,152 @@ export default function Permissions() {
               {isAwsConnected && <option value="aws">AWS</option>}
               {isGoogleConnected && <option value="google">Google</option>}
             </select>
+          </div>
+
+          {/* Quick Risk Factor Filters */}
+          <div className="bg-[#1a1f28] border border-[#23272f] rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Filter className="w-4 h-4 text-gray-400" />
+              <span className="text-sm font-medium text-gray-300">Quick Risk Factor Filters</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {/* No MFA */}
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setTypeFilter('user');
+                  setRiskFilter('all');
+                  setProviderFilter('all');
+                  setRiskFactorFilter(riskFactorFilter === 'no-mfa' ? null : 'no-mfa');
+                }}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  riskFactorFilter === 'no-mfa'
+                    ? 'bg-red-900/50 border border-red-500/50 text-red-200'
+                    : 'bg-red-900/30 border border-red-500/30 text-red-300 hover:bg-red-900/50 hover:border-red-500/50'
+                }`}
+              >
+                <Lock className="w-3 h-3" />
+                No MFA ({users.filter(user => !user.hasMFA).length})
+              </button>
+
+              {/* Never Logged In */}
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setTypeFilter('user');
+                  setRiskFilter('all');
+                  setProviderFilter('all');
+                  setRiskFactorFilter(riskFactorFilter === 'never-logged-in' ? null : 'never-logged-in');
+                }}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  riskFactorFilter === 'never-logged-in'
+                    ? 'bg-orange-900/50 border border-orange-500/50 text-orange-200'
+                    : 'bg-orange-900/30 border border-orange-500/30 text-orange-300 hover:bg-orange-900/50 hover:border-orange-500/50'
+                }`}
+              >
+                <User className="w-3 h-3" />
+                Never Logged In ({users.filter(user => !user.lastUsed).length})
+              </button>
+
+              {/* No Activity */}
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setTypeFilter('user');
+                  setRiskFilter('all');
+                  setProviderFilter('all');
+                  setRiskFactorFilter(riskFactorFilter === 'no-activity' ? null : 'no-activity');
+                }}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  riskFactorFilter === 'no-activity'
+                    ? 'bg-yellow-900/50 border border-yellow-500/50 text-yellow-200'
+                    : 'bg-yellow-900/30 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-900/50 hover:border-yellow-500/50'
+                }`}
+              >
+                <AlertCircle className="w-3 h-3" />
+                No Activity ({users.filter(user => user.lastUsed && isInactive(user.lastUsed)).length})
+              </button>
+
+              {/* Admin Access */}
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setTypeFilter('user');
+                  setRiskFilter('all');
+                  setProviderFilter('google');
+                  setRiskFactorFilter(riskFactorFilter === 'admin-access' ? null : 'admin-access');
+                }}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  riskFactorFilter === 'admin-access'
+                    ? 'bg-purple-900/50 border border-purple-500/50 text-purple-200'
+                    : 'bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500/50'
+                }`}
+              >
+                <Shield className="w-3 h-3" />
+                Admin Access ({users.filter(user => 
+                  user.provider === 'google' ? (user as GoogleUser).isAdmin : false
+                ).length})
+              </button>
+
+              {/* Suspended Users */}
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setTypeFilter('user');
+                  setRiskFilter('all');
+                  setProviderFilter('google');
+                  setRiskFactorFilter(riskFactorFilter === 'suspended' ? null : 'suspended');
+                }}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  riskFactorFilter === 'suspended'
+                    ? 'bg-gray-900/50 border border-gray-500/50 text-gray-200'
+                    : 'bg-gray-900/30 border border-gray-500/30 text-gray-300 hover:bg-gray-900/50 hover:border-gray-500/50'
+                }`}
+              >
+                <AlertCircle className="w-3 h-3" />
+                Suspended ({users.filter(user => 
+                  user.provider === 'google' && (user as GoogleUser).riskAssessment?.factors?.some(factor => 
+                    factor.includes('suspended')
+                  )
+                ).length})
+              </button>
+
+              {/* High Risk */}
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setTypeFilter('all');
+                  setRiskFilter('all');
+                  setProviderFilter('all');
+                  setRiskFactorFilter(riskFactorFilter === 'high-risk' ? null : 'high-risk');
+                }}
+                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                  riskFactorFilter === 'high-risk'
+                    ? 'bg-red-900/50 border border-red-500/50 text-red-200'
+                    : 'bg-red-900/30 border border-red-500/30 text-red-300 hover:bg-red-900/50 hover:border-red-500/50'
+                }`}
+              >
+                <AlertTriangle className="w-3 h-3" />
+                High Risk ({allEntities.filter(entity => 
+                  entity.riskAssessment?.riskLevel === 'high' || entity.riskAssessment?.riskLevel === 'critical'
+                ).length})
+              </button>
+
+              {/* Clear Filters */}
+              <button
+                onClick={() => {
+                  setSearchQuery('');
+                  setTypeFilter('all');
+                  setRiskFilter('all');
+                  setProviderFilter('all');
+                  setRiskFactorFilter(null);
+                }}
+                className="inline-flex items-center gap-1 px-3 py-1 bg-blue-900/30 border border-blue-500/30 rounded-full text-xs font-medium text-blue-300 hover:bg-blue-900/50 hover:border-blue-500/50 transition-colors"
+              >
+                <Filter className="w-3 h-3" />
+                Clear All
+              </button>
+            </div>
           </div>
 
           {/* Table Section */}
