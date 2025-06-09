@@ -3,7 +3,7 @@ import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-r
 import { useState, useEffect } from "react";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
-import { auth, signInWithEmailAndPassword, isAuthenticated, sendEmailVerification } from "~/lib/firebase";
+import { auth, signInWithEmailAndPassword, isAuthenticated, sendEmailVerification, saveClientSignInData } from "~/lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { Mail, Loader2 } from "lucide-react";
 
@@ -95,6 +95,15 @@ export async function action({ request }: ActionFunctionArgs) {
       emailVerified: userCredential.user.emailVerified,
       uid: userCredential.user.uid
     });
+
+    // Save client sign-in data to Firestore
+    try {
+      await saveClientSignInData(email);
+      console.log("Client sign-in data saved to Firestore");
+    } catch (firestoreError) {
+      console.error("Failed to save client sign-in data:", firestoreError);
+      // Don't fail the sign-in if Firestore save fails
+    }
 
     // Verify the sign-in was successful
     const isUserAuthenticated = await isAuthenticated();

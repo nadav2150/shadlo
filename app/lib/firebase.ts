@@ -9,6 +9,18 @@ import {
   sendEmailVerification,
   type User
 } from "firebase/auth";
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  serverTimestamp,
+  query,
+  where,
+  getDocs,
+  updateDoc,
+  doc,
+  type Firestore
+} from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBwZTWDV7ZBOFhvj1Rp0LRrcqlazJtVG18",
@@ -23,6 +35,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 
 // Initialize auth persistence
 const initAuth = async () => {
@@ -75,9 +88,42 @@ export async function isAuthenticated(): Promise<boolean> {
   return !!user;
 }
 
+// Function to save client sign-in data to Firestore
+export async function saveClientSignInData(email: string): Promise<void> {
+  try {
+    // Check if user already exists in clients collection
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      // User exists, update their lastSignInAt
+      const userDoc = querySnapshot.docs[0];
+      await updateDoc(doc(db, "clients", userDoc.id), {
+        lastSignInAt: serverTimestamp()
+      });
+      console.log("Updated existing client sign-in data for:", email);
+    } else {
+      // User doesn't exist, create new document
+      const clientData = {
+        email: email,
+        lastSignInAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+      };
+
+      const docRef = await addDoc(collection(db, "clients"), clientData);
+      console.log("Created new client document with ID:", docRef.id);
+    }
+  } catch (error) {
+    console.error("Error saving client sign-in data:", error);
+    throw error;
+  }
+}
+
 export { 
   auth, 
   signInWithEmailAndPassword, 
   signOut,
-  sendEmailVerification 
+  sendEmailVerification,
+  db
 }; 
