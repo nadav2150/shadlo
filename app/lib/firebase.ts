@@ -11,13 +11,13 @@ import {
 } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyC9D6SPLK7RvJxq-DhtSRrlIibDxUGSilE",
-  authDomain: "shadlo-e7fe1.firebaseapp.com",
-  projectId: "shadlo-e7fe1",
-  storageBucket: "shadlo-e7fe1.firebasestorage.app",
-  messagingSenderId: "350534525285",
-  appId: "1:350534525285:web:4305700f20aee16a96818c",
-  measurementId: "G-7NNFYYX382"
+  apiKey: "AIzaSyBwZTWDV7ZBOFhvj1Rp0LRrcqlazJtVG18",
+  authDomain: "admin-test-462316.firebaseapp.com",
+  projectId: "admin-test-462316",
+  storageBucket: "admin-test-462316.firebasestorage.app",
+  messagingSenderId: "758013016055",
+  appId: "1:758013016055:web:bc6ce028b876334204e0f2",
+  measurementId: "G-ZSCPQ1HWED"
 };
 
 // Initialize Firebase
