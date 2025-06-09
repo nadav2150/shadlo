@@ -209,11 +209,14 @@ export default function Settings() {
 
   const handleEditCompany = () => {
     setIsEditingCompany(true);
+    // Set the current company name in the input field
+    setCompanyName(companyName);
   };
 
   const handleCancelEditCompany = () => {
     setIsEditingCompany(false);
-    setCompanyName(""); // Reset to empty
+    // Restore the original company name from settings
+    setCompanyName(settings?.companyName ?? "");
   };
 
   const handleSaveCompany = () => {
@@ -502,7 +505,6 @@ export default function Settings() {
                 <li>Security risk assessments</li>
                 <li>User activity summaries</li>
                 <li>Policy compliance status</li>
-                <li>Recommended security actions</li>
                 <li>System health overview</li>
               </ul>
             </div>

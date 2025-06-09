@@ -11,7 +11,13 @@ import {
 import type { LinksFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { cn } from "~/lib/utils";
-import { auth, isAuthenticated } from "~/lib/firebase";
+import { auth, isAuthenticated, db } from "~/lib/firebase";
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs 
+} from "firebase/firestore";
 
 import "./tailwind.css";
 import AppSidebar from "~/components/AppSidebar";
@@ -70,11 +76,28 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return redirect("/sign-in");
     }
 
+    // Try to get company name from Firestore
+    let companyName = "";
+    try {
+      const clientsRef = collection(db, "clients");
+      const q = query(clientsRef, where("email", "==", currentUser.email));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const userDoc = querySnapshot.docs[0].data();
+        companyName = userDoc.companyName || "";
+      }
+    } catch (firestoreError) {
+      console.error("Error loading company name from Firestore:", firestoreError);
+      // Continue without company name if Firestore fails
+    }
+
     return json({ 
       user: { 
         email: currentUser.email,
         uid: currentUser.uid,
-        emailVerified: currentUser.emailVerified
+        emailVerified: currentUser.emailVerified,
+        companyName: companyName
       } 
     });
   } catch (error) {

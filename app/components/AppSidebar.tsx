@@ -79,7 +79,7 @@ export default function AppSidebar() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-sm font-medium text-gray-200 truncate">
-                      {user.email ? user.email.split('@')[0] : 'User'}
+                      {user.companyName || (user.email ? user.email.split('@')[0] : 'User')}
                     </p>
                   </div>
                   <p className="text-xs text-gray-400 truncate">
