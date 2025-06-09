@@ -19,17 +19,32 @@ import { getAwsCredentials, setAwsCredentials, clearAwsCredentials } from "~/uti
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import { getGoogleCredentials, clearGoogleCredentials, type GoogleCredentials } from "~/utils/session.google.server";
+import { validateGoogleCredentials } from "~/utils/google-credentials.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
   const awsCredentials = await getAwsCredentials(request);
   const googleCredentials = await getGoogleCredentials(request);
+  
+  // Validate Google credentials if they exist
+  let googleCredentialsValid = false;
+  if (googleCredentials?.access_token) {
+    const validation = await validateGoogleCredentials(request);
+    googleCredentialsValid = validation.isValid;
+    
+    console.log("Debug - Providers page Google validation:", {
+      hasCredentials: !!googleCredentials,
+      isValid: validation.isValid,
+      error: validation.error
+    });
+  }
   
   return json({
     credentials: {
       aws: awsCredentials
     },
     googleClientId: process.env.GOOGLE_CLIENT_ID,
-    googleCredentials
+    googleCredentials: googleCredentialsValid ? googleCredentials : null,
+    googleCredentialsValid
   });
 };
 
@@ -163,6 +178,7 @@ interface ProviderCardProps {
   description: string;
   icon: React.ReactNode;
   isConnected: boolean;
+  isInvalid?: boolean;
   onConnect?: () => void;
   onManage?: () => void;
   onDisconnect?: () => void;
@@ -197,6 +213,7 @@ function ProviderCard({
   description, 
   icon, 
   isConnected, 
+  isInvalid = false,
   onConnect, 
   onManage,
   onDisconnect,
@@ -234,6 +251,23 @@ function ProviderCard({
                 <Settings className="w-4 h-4" />
               </Button>
             )}
+            {onDisconnect && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDisconnectConfirm(true)}
+                className="text-white/60 hover:text-white"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+        ) : isInvalid ? (
+          <div className="flex items-center space-x-2">
+            <span className="flex items-center text-sm text-red-400">
+              <AlertCircle className="w-4 h-4 mr-1" />
+              Invalid
+            </span>
             {onDisconnect && (
               <Button
                 variant="ghost"
@@ -295,12 +329,15 @@ function ProviderCard({
 }
 
 export default function ProvidersPage() {
-  const { credentials, googleClientId, googleCredentials: initialGoogleCredentials } = useLoaderData<typeof loader>();
+  const { credentials, googleClientId, googleCredentials: initialGoogleCredentials, googleCredentialsValid } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const [showModal, setShowModal] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "google">("aws");
   const [googleError, setGoogleError] = useState<string | null>(null);
+
+  // Check if Google is actually connected (has valid credentials)
+  const isGoogleConnected = googleCredentialsValid && !!initialGoogleCredentials;
 
   const handleConnect = (provider: "aws" | "azure" | "okta" | "google") => {
     setSelectedProvider(provider);
@@ -413,6 +450,15 @@ export default function ProvidersPage() {
           </div>
         )}
 
+        {!googleCredentialsValid && initialGoogleCredentials && (
+          <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertCircle className="w-5 h-5" />
+              <span>Google credentials are invalid or expired. Please reconnect your Google account.</span>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <ProviderCard
             name="AWS"
@@ -428,10 +474,11 @@ export default function ProvidersPage() {
             name="Google"
             description="Connect your Google Workspace to manage users and groups"
             icon={<Mail className="w-6 h-6 text-red-400" />}
-            isConnected={!!initialGoogleCredentials}
+            isConnected={isGoogleConnected}
+            isInvalid={!googleCredentialsValid && !!initialGoogleCredentials}
             onDisconnect={handleGoogleDisconnect}
             customConnectButton={
-              !initialGoogleCredentials && (
+              !isGoogleConnected && (
                 <GoogleLoginButton
                   onSuccess={handleGoogleSuccess}
                   onError={handleGoogleError}

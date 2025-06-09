@@ -10,6 +10,7 @@ import { getAwsCredentials } from "~/utils/session.server";
 import { getIAMUsers, getIAMRoles } from "~/lib/iam/aws-operations";
 import { calculateRiskScore } from "~/lib/iam/risk-assessment";
 import type { ShadowPermissionRisk, UserDetails, RoleDetails } from "~/lib/iam/types";
+import { validateGoogleCredentials } from "~/utils/google-credentials.server";
 
 export const meta: MetaFunction = () => {
   return [
@@ -86,6 +87,15 @@ export const loader: LoaderFunction = async ({ request }) => {
     // Get the cookie header from the original request
     const cookieHeader = request.headers.get("Cookie");
     
+    // Validate Google credentials first
+    const googleValidation = await validateGoogleCredentials(request);
+    const googleCredentialsValid = googleValidation.isValid;
+    
+    console.log("Debug - Index route Google validation:", {
+      isValid: googleValidation.isValid,
+      error: googleValidation.error
+    });
+    
     // Make parallel requests to both AWS and Google APIs
     const [awsResponse, googleResponse] = await Promise.all([
       fetch(`${baseUrl}/api/iam-entities`, {
@@ -93,11 +103,14 @@ export const loader: LoaderFunction = async ({ request }) => {
           Cookie: cookieHeader || "",
         },
       }),
-      fetch(`${baseUrl}/api/google-users`, {
-        headers: {
-          Cookie: cookieHeader || "",
-        },
-      })
+      // Only fetch Google data if credentials are valid
+      googleCredentialsValid 
+        ? fetch(`${baseUrl}/api/google-users`, {
+            headers: {
+              Cookie: cookieHeader || "",
+            },
+          })
+        : Promise.resolve(new Response(JSON.stringify({ users: [], credentials: null }), { status: 200 }))
     ]);
     
     const awsData = await awsResponse.json();
@@ -107,7 +120,8 @@ export const loader: LoaderFunction = async ({ request }) => {
       awsData,
       googleData,
       hasGoogleUsers: !!googleData.users?.length,
-      googleUserCount: googleData.users?.length
+      googleUserCount: googleData.users?.length,
+      googleCredentialsValid
     });
     
     // Transform Google users to match AWS user format
@@ -163,12 +177,13 @@ export const loader: LoaderFunction = async ({ request }) => {
     return json({ 
       credentials: {
         aws: awsData.credentials,
-        google: googleData.credentials
+        google: googleCredentialsValid ? googleData.credentials : null
       },
       users: combinedUsers,
       roles: combinedRoles,
       scoreHistory,
-      error: awsData.error || googleData.error || null
+      error: awsData.error || (googleCredentialsValid ? googleData.error : null) || null,
+      googleCredentialsValid
     });
   } catch (error) {
     console.error("Error fetching IAM data:", error);
@@ -180,16 +195,17 @@ export const loader: LoaderFunction = async ({ request }) => {
       users: [],
       roles: [],
       scoreHistory: [],
-      error: "Failed to fetch IAM data. Please check your credentials."
+      error: "Failed to fetch IAM data. Please check your credentials.",
+      googleCredentialsValid: false
     });
   }
 };
 
 const Index = () => {
-  const { credentials, users, roles, scoreHistory, error } = useLoaderData<typeof loader>();
+  const { credentials, users, roles, scoreHistory, error, googleCredentialsValid } = useLoaderData<typeof loader>();
 
   // Calculate shadow permissions for all entities and deduplicate them
-  const shadowPermissions: ShadowPermissionRisk[] = (credentials.aws || credentials.google) ? [
+  const shadowPermissions: ShadowPermissionRisk[] = (credentials.aws || (googleCredentialsValid && !!credentials.google)) ? [
     ...users.map((user: UserDetails) => calculateRiskScore(user).shadowPermissions),
     ...roles.map((role: RoleDetails) => calculateRiskScore(role).shadowPermissions)
   ]
@@ -209,7 +225,7 @@ const Index = () => {
 
   const connectedServices = {
     AWS: !!credentials.aws?.accessKeyId,
-    Google: !!credentials.google,
+    Google: googleCredentialsValid && !!credentials.google,
     Azure: false,
     Okta: false
   };
@@ -230,11 +246,19 @@ const Index = () => {
             </div>
           </div>
         )}
-        {!credentials.aws && credentials.google && (
+        {!credentials.aws && googleCredentialsValid && credentials.google && (
           <div className="mt-4 bg-blue-900/20 border border-blue-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 text-blue-400">
               <CheckCircle className="w-5 h-5" />
               <span>Connected to Google Workspace. AWS credentials not required.</span>
+            </div>
+          </div>
+        )}
+        {!googleCredentialsValid && credentials.google && (
+          <div className="mt-4 bg-red-900/20 border border-red-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertCircle className="w-5 h-5" />
+              <span>Google credentials are invalid or expired. Please reconnect your Google account in the Providers page.</span>
             </div>
           </div>
         )}
@@ -253,7 +277,7 @@ const Index = () => {
         users={users} 
         roles={roles} 
         shadowPermissions={shadowPermissions} 
-        hasCredentials={!!credentials.aws || !!credentials.google}
+        hasCredentials={!!credentials.aws || (googleCredentialsValid && !!credentials.google)}
       />
 
       {/* Main Content Grid: Timeline and Service Connections */}
@@ -262,7 +286,7 @@ const Index = () => {
         <div className="xl:col-span-2">
           <Timeline 
             scoreHistory={scoreHistory}
-            hasCredentials={!!credentials.aws || !!credentials.google}
+            hasCredentials={!!credentials.aws || (googleCredentialsValid && !!credentials.google)}
           />
         </div>
         

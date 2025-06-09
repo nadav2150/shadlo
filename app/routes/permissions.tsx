@@ -6,6 +6,7 @@ import type { LoaderFunction } from "@remix-run/node";
 import { useState, useMemo } from "react";
 import { getGoogleCredentials } from "~/utils/session.google.server";
 import { calculateRiskScore } from "~/lib/iam/google-risk-assessment";
+import { validateGoogleCredentials } from "~/utils/google-credentials.server";
 
 interface Policy {
   name: string;
@@ -135,6 +136,7 @@ interface LoaderData {
     accessKeyId: string;
     region: string;
   } | null;
+  googleCredentialsValid: boolean;
 }
 
 export const loader: LoaderFunction = async ({ request }) => {
@@ -149,6 +151,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     // Initialize empty data
     let awsData = { users: [], roles: [], credentials: null, error: null };
     let googleUsers: GoogleUser[] = [];
+    let googleCredentialsValid = false;
     
     // Try to fetch AWS data
     try {
@@ -168,60 +171,80 @@ export const loader: LoaderFunction = async ({ request }) => {
       // Continue without AWS data
     }
 
-    // Try to fetch Google data
-    try {
-      const googleResponse = await fetch(`${baseUrl}/api/google-users`, {
-        headers: {
-          Cookie: cookieHeader || "",
-        },
-      });
-      
-      if (googleResponse.ok) {
-        const googleData = await googleResponse.json();
-        // Transform Google users to match the common interface
-        googleUsers = googleData.users?.map((user: GoogleApiUser) => {
-          const riskAssessment = calculateRiskScore({
-            lastLoginTime: user.lastLoginTime || null,
-            suspended: user.suspended || false,
-            isAdmin: user.isAdmin || false,
-            isDelegatedAdmin: user.isDelegatedAdmin || false,
-            changePasswordAtNextLogin: user.changePasswordAtNextLogin || false,
-            isMailboxSetup: user.isMailboxSetup || false,
-            isEnrolledIn2Sv: user.isEnrolledIn2Sv || false
+    // Validate Google credentials before attempting to fetch data
+    const googleValidation = await validateGoogleCredentials(request);
+    googleCredentialsValid = googleValidation.isValid;
+    
+    console.log("Debug - Google validation result:", {
+      isValid: googleValidation.isValid,
+      error: googleValidation.error
+    });
+    
+    if (googleValidation.isValid) {
+      // Try to fetch Google data only if credentials are valid
+      try {
+        const googleResponse = await fetch(`${baseUrl}/api/google-users`, {
+          headers: {
+            Cookie: cookieHeader || "",
+          },
+        });
+        
+        if (googleResponse.ok) {
+          const googleData = await googleResponse.json();
+          console.log("Debug - Google API response successful:", {
+            userCount: googleData.users?.length
           });
+          
+          // Transform Google users to match the common interface
+          googleUsers = googleData.users?.map((user: GoogleApiUser) => {
+            const riskAssessment = calculateRiskScore({
+              lastLoginTime: user.lastLoginTime || null,
+              suspended: user.suspended || false,
+              isAdmin: user.isAdmin || false,
+              isDelegatedAdmin: user.isDelegatedAdmin || false,
+              changePasswordAtNextLogin: user.changePasswordAtNextLogin || false,
+              isMailboxSetup: user.isMailboxSetup || false,
+              isEnrolledIn2Sv: user.isEnrolledIn2Sv || false
+            });
 
-          return {
-            ...user,
-            provider: 'google' as const,
-            type: 'user' as const,
-            createDate: new Date().toISOString(), // Google API doesn't provide creation date
-            lastUsed: user.lastLoginTime || undefined,
-            policies: [], // Google API doesn't provide policies in the same way
-            hasMFA: user.isEnrolledIn2Sv,
-            riskAssessment: {
-              riskLevel: riskAssessment.level.toLowerCase() as 'low' | 'medium' | 'high' | 'critical',
-              score: riskAssessment.score,
-              lastUsedScore: user.lastLoginTime ? 0 : 3, // Add points for never logged in
-              permissionScore: user.isAdmin ? 2 : 0, // Add points for admin access
-              identityScore: user.isEnrolledIn2Sv ? 0 : 1, // Add points for no 2SV
-              factors: riskAssessment.factors,
-              shadowPermissions: [] // Google doesn't have shadow permissions concept
-            }
-          };
-        }) || [];
-      } else {
-        console.log("Google not connected or error:", await googleResponse.text());
+            return {
+              ...user,
+              provider: 'google' as const,
+              type: 'user' as const,
+              createDate: new Date().toISOString(), // Google API doesn't provide creation date
+              lastUsed: user.lastLoginTime || undefined,
+              policies: [], // Google API doesn't provide policies in the same way
+              hasMFA: user.isEnrolledIn2Sv,
+              riskAssessment: {
+                riskLevel: riskAssessment.level.toLowerCase() as 'low' | 'medium' | 'high' | 'critical',
+                score: riskAssessment.score,
+                lastUsedScore: user.lastLoginTime ? 0 : 3, // Add points for never logged in
+                permissionScore: user.isAdmin ? 2 : 0, // Add points for admin access
+                identityScore: user.isEnrolledIn2Sv ? 0 : 1, // Add points for no 2SV
+                factors: riskAssessment.factors,
+                shadowPermissions: [] // Google doesn't have shadow permissions concept
+              }
+            };
+          }) || [];
+        } else {
+          const errorText = await googleResponse.text();
+          console.log("Google API error:", errorText);
+          googleCredentialsValid = false; // Mark as invalid if API call fails
+        }
+      } catch (error) {
+        console.log("Error fetching Google users:", error);
+        googleCredentialsValid = false; // Mark as invalid if fetch fails
       }
-    } catch (error) {
-      console.log("Error fetching Google users:", error);
-      // Continue without Google data
+    } else {
+      console.log("Google credentials validation failed:", googleValidation.error);
     }
     
     console.log("Debug - API Response:", { 
       hasAwsCredentials: !!awsData.credentials,
       awsUserCount: awsData.users?.length,
       awsRoleCount: awsData.roles?.length,
-      googleUserCount: googleUsers.length
+      googleUserCount: googleUsers.length,
+      googleCredentialsValid
     });
     
     // Combine AWS and Google users
@@ -230,12 +253,13 @@ export const loader: LoaderFunction = async ({ request }) => {
       ...googleUsers
     ];
     
-    // Return the combined data
+    // Return the combined data with Google credentials status
     return json<LoaderData>({ 
       users: allUsers,
       roles: awsData.roles || [],
       credentials: awsData.credentials || null,
-      error: awsData.error || null
+      error: awsData.error || null,
+      googleCredentialsValid
     });
   } catch (error) {
     console.error("Error in loader:", error);
@@ -244,7 +268,8 @@ export const loader: LoaderFunction = async ({ request }) => {
         users: [], 
         roles: [], 
         credentials: null,
-        error: error instanceof Error ? error.message : "Failed to fetch IAM data"
+        error: error instanceof Error ? error.message : "Failed to fetch IAM data",
+        googleCredentialsValid: false
       }
     );
   }
@@ -381,7 +406,7 @@ type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' |
 type SortDirection = 'asc' | 'desc';
 
 export default function Permissions() {
-  const { users = [], roles = [], credentials, error } = useLoaderData<LoaderData>();
+  const { users = [], roles = [], credentials, error, googleCredentialsValid } = useLoaderData<LoaderData>();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
@@ -391,7 +416,7 @@ export default function Permissions() {
 
   // Check which providers are connected
   const isAwsConnected = !!credentials?.accessKeyId;
-  const isGoogleConnected = users.some(user => user.provider === 'google');
+  const isGoogleConnected = googleCredentialsValid && users.some(user => user.provider === 'google');
   const hasConnectedProviders = isAwsConnected || isGoogleConnected;
 
   // Format dates safely
@@ -548,6 +573,28 @@ export default function Permissions() {
             <div className="flex items-center gap-2 text-yellow-400">
               <AlertTriangle className="w-5 h-5" />
               <span>No identity providers connected. Please connect at least one provider in the Settings page.</span>
+            </div>
+            <a 
+              href="/providers" 
+              className="text-blue-400 hover:text-blue-300 flex items-center gap-2 w-fit"
+            >
+              <Settings className="w-4 h-4" />
+              Go to Providers
+            </a>
+          </div>
+        </div>
+      );
+    }
+
+    // Check if Google credentials are invalid but we have Google users (from previous valid session)
+    const hasGoogleUsers = users.some(user => user.provider === 'google');
+    if (hasGoogleUsers && !googleCredentialsValid) {
+      return (
+        <div className="mb-6 bg-red-900/20 border border-red-500/20 rounded-xl p-4">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertCircle className="w-5 h-5" />
+              <span>Google credentials are invalid or expired. Please reconnect your Google account in the Settings page.</span>
             </div>
             <a 
               href="/providers" 
