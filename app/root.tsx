@@ -90,6 +90,14 @@ export default function App() {
   const location = useLocation();
   const { user } = useLoaderData<typeof loader>();
   const isSignInPage = location.pathname === "/sign-in";
+  const isNotFoundPage = location.pathname !== "/" && 
+                        location.pathname !== "/sign-in" && 
+                        location.pathname !== "/providers" && 
+                        location.pathname !== "/entities" && 
+                        location.pathname !== "/settings" &&
+                        !location.pathname.startsWith("/api/") &&
+                        !location.pathname.startsWith("/build/") &&
+                        !location.pathname.startsWith("/assets/");
 
   // If we're not on the sign-in page and there's no user, redirect
   if (!isSignInPage && !user) {
@@ -105,7 +113,7 @@ export default function App() {
         <Links />
       </head>
       <body className="h-full">
-        {isSignInPage ? (
+        {isSignInPage || isNotFoundPage ? (
           <Outlet />
         ) : (
           <div className="flex h-full">

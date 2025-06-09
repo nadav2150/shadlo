@@ -7,7 +7,8 @@ import {
   Server, 
   Shield, 
   Settings,
-  ChevronRight
+  ChevronRight,
+  Users
 } from "lucide-react";
 import { Button } from "./ui/button";
 import type { loader as rootLoader } from "~/root";
@@ -19,7 +20,7 @@ export default function AppSidebar() {
   const navItems = [
     { to: "/", label: "Dashboard", icon: LayoutDashboard },
     { to: "/providers", label: "Providers", icon: Server },
-    { to: "/permissions", label: "Permissions", icon: Shield },
+    { to: "/entities", label: "Entities", icon: Users },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
 
@@ -110,7 +111,7 @@ export default function AppSidebar() {
             {/* Version Info */}
             <div className="pt-3 border-t border-gray-800/30">
               <div className="flex items-center justify-between text-[10px] text-gray-500">
-                <span>Shadow Access Hunter</span>
+                <span>Shadlo System</span>
                 <span>v1.0.0</span>
               </div>
             </div>

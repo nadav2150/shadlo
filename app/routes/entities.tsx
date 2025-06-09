@@ -1,5 +1,5 @@
 import React from "react";
-import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Settings, Cloud, Mail, ChevronUp, Clock, Ban, Crown, Activity, Download, FileText } from "lucide-react";
+import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Settings, Cloud, Mail, ChevronUp, Clock, Ban, Crown, Activity, Download, FileText, Users } from "lucide-react";
 import { useLoaderData, Link } from "@remix-run/react";
 import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
@@ -407,7 +407,7 @@ function getShadowPermissionInfo(type: string) {
 type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' | 'risk' | 'policies';
 type SortDirection = 'asc' | 'desc';
 
-export default function Permissions() {
+export default function Entities() {
   const { users = [], roles = [], credentials, error, googleCredentialsValid } = useLoaderData<LoaderData>();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
@@ -1056,7 +1056,7 @@ export default function Permissions() {
         <div className="space-y-6">
           {/* Header */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h1 className="text-2xl font-bold">Permissions</h1>
+            <h1 className="text-2xl font-bold">Entities</h1>
             <ConnectionStatus />
           </div>
 
