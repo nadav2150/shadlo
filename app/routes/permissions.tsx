@@ -512,8 +512,8 @@ export default function Permissions() {
       });
     }
 
-    const highRiskCount = allEntities.filter(entity => 
-      entity.riskAssessment?.riskLevel === 'high' || entity.riskAssessment?.riskLevel === 'critical'
+    const highRiskCount = users.filter(user => 
+      user.riskAssessment?.riskLevel === 'high' || user.riskAssessment?.riskLevel === 'critical'
     ).length;
     if (highRiskCount > 0) {
       riskFactors.set('high-risk', {
@@ -786,7 +786,7 @@ export default function Permissions() {
       doc.text(`Generated on: ${new Date().toLocaleString()}`, 15, 40);
       doc.text(`Total Entities: ${allEntities.length}`, 15, 45);
 
-      // Prepare table data
+      // Prepare table data using filtered entities
       const columns = ['Name', 'Type', 'Provider', 'Created', 'Last Used', 'MFA', 'Risk Level', 'Risk Factors'];
       const data = allEntities.map(entity => {
         const riskFactors = entity.riskAssessment?.factors || [];
@@ -810,7 +810,7 @@ export default function Permissions() {
       autoTable(doc, {
         head: [columns],
         body: data,
-        startY: 65,
+        startY: 55,
         theme: 'grid',
         headStyles: {
           fillColor: [41, 128, 185],
@@ -837,18 +837,64 @@ export default function Permissions() {
         alternateRowStyles: {
           fillColor: [248, 249, 250]
         },
-        margin: { top: 65 }
+        margin: { top: 55 }
       });
 
-      // Add risk factors summary
-      const riskFactorsSummary = getAllRiskFactors();
-      if (riskFactorsSummary.size > 0) {
+      // Add risk factors summary for filtered data only
+      const getFilteredRiskFactors = () => {
+        const riskFactorMap = new Map<string, { label: string; count: number; color: string; icon: any }>();
+        
+        allEntities.forEach(entity => {
+          const factors = entity.riskAssessment?.factors || [];
+          factors.forEach(factor => {
+            if (!riskFactorMap.has(factor)) {
+              // Determine color and icon based on factor type
+              let color = 'blue';
+              let icon = AlertTriangle;
+              
+              if (factor.includes('MFA') || factor.includes('2FA')) {
+                color = 'red';
+                icon = Shield;
+              } else if (factor.includes('Never') || factor.includes('Inactive')) {
+                color = 'orange';
+                icon = Clock;
+              } else if (factor.includes('Admin') || factor.includes('Super')) {
+                color = 'purple';
+                icon = Crown;
+              } else if (factor.includes('Suspended')) {
+                color = 'gray';
+                icon = Ban;
+              } else if (factor.includes('High Risk') || factor.includes('Critical')) {
+                color = 'red';
+                icon = AlertTriangle;
+              } else if (factor.includes('No Activity')) {
+                color = 'yellow';
+                icon = Activity;
+              }
+              
+              riskFactorMap.set(factor, {
+                label: factor,
+                count: 1,
+                color,
+                icon
+              });
+            } else {
+              riskFactorMap.get(factor)!.count++;
+            }
+          });
+        });
+        
+        return riskFactorMap;
+      };
+
+      const filteredRiskFactorsSummary = getFilteredRiskFactors();
+      if (filteredRiskFactorsSummary.size > 0) {
         const currentY = (doc as any).lastAutoTable.finalY + 10;
         doc.setFontSize(14);
-        doc.text('Risk Factors Summary', 15, currentY);
+        doc.text('Risk Factors Summary (Filtered Data)', 15, currentY);
         
         let yPos = currentY + 10;
-        riskFactorsSummary.forEach((factor, key) => {
+        filteredRiskFactorsSummary.forEach((factor, key) => {
           if (yPos > 250) {
             doc.addPage();
             yPos = 20;
@@ -878,7 +924,7 @@ export default function Permissions() {
       doc.text(`Generated on: ${new Date().toLocaleString()}`, 15, 30);
       doc.text(`Total Entities: ${allEntities.length}`, 15, 35);
 
-      // Continue with table generation...
+      // Continue with table generation using filtered data...
       const columns = ['Name', 'Type', 'Provider', 'Created', 'Last Used', 'MFA', 'Risk Level', 'Risk Factors'];
       const data = allEntities.map(entity => {
         const riskFactors = entity.riskAssessment?.factors || [];
@@ -931,14 +977,60 @@ export default function Permissions() {
         margin: { top: 45 }
       });
 
-      const riskFactorsSummary = getAllRiskFactors();
-      if (riskFactorsSummary.size > 0) {
+      // Add filtered risk factors summary
+      const getFilteredRiskFactors = () => {
+        const riskFactorMap = new Map<string, { label: string; count: number; color: string; icon: any }>();
+        
+        allEntities.forEach(entity => {
+          const factors = entity.riskAssessment?.factors || [];
+          factors.forEach(factor => {
+            if (!riskFactorMap.has(factor)) {
+              let color = 'blue';
+              let icon = AlertTriangle;
+              
+              if (factor.includes('MFA') || factor.includes('2FA')) {
+                color = 'red';
+                icon = Shield;
+              } else if (factor.includes('Never') || factor.includes('Inactive')) {
+                color = 'orange';
+                icon = Clock;
+              } else if (factor.includes('Admin') || factor.includes('Super')) {
+                color = 'purple';
+                icon = Crown;
+              } else if (factor.includes('Suspended')) {
+                color = 'gray';
+                icon = Ban;
+              } else if (factor.includes('High Risk') || factor.includes('Critical')) {
+                color = 'red';
+                icon = AlertTriangle;
+              } else if (factor.includes('No Activity')) {
+                color = 'yellow';
+                icon = Activity;
+              }
+              
+              riskFactorMap.set(factor, {
+                label: factor,
+                count: 1,
+                color,
+                icon
+              });
+            } else {
+              riskFactorMap.get(factor)!.count++;
+            }
+          });
+        });
+        
+        return riskFactorMap;
+      };
+
+      const filteredRiskFactorsSummary = getFilteredRiskFactors();
+      if (filteredRiskFactorsSummary.size > 0) {
         const currentY = (doc as any).lastAutoTable.finalY + 10;
         doc.setFontSize(14);
-        doc.text('Risk Factors Summary', 15, currentY);
+        doc.text('Risk Factors Summary (Filtered Data)', 15, currentY);
         
         let yPos = currentY + 10;
-        riskFactorsSummary.forEach((factor, key) => {
+        filteredRiskFactorsSummary.forEach((factor, key) => {
           if (yPos > 250) {
             doc.addPage();
             yPos = 20;
