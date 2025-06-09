@@ -707,15 +707,6 @@ export default function Permissions() {
     });
   }, [users, roles, searchQuery, typeFilter, riskFilter, providerFilter, riskFactorFilter, sortField, sortDirection]);
 
-  // Calculate total access keys safely
-  const totalAccessKeys = users?.reduce((acc, user) => {
-    if ('accessKeys' in user) {
-      return acc + (user.accessKeys?.length || 0);
-    }
-    return acc;
-  }, 0) || 0;
-  const totalEntities = (users?.length || 0) + (roles?.length || 0);
-
   // Helper function to render sort indicator
   const SortIndicator = ({ field }: { field: SortField }) => {
     if (sortField !== field) return null;
@@ -779,42 +770,6 @@ export default function Permissions() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <h1 className="text-2xl font-bold">Permissions</h1>
             <ConnectionStatus />
-          </div>
-
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white/5 border border-gray-800 rounded-xl px-6 py-6 flex flex-col justify-center">
-              <div className="mb-2">
-                <span className="text-lg font-semibold text-white">Total Entities</span>
-              </div>
-              <div className="text-2xl font-extrabold text-white">
-                {hasConnectedProviders ? `${totalEntities} entities` : 'N/A'}
-              </div>
-            </div>
-            <div className="bg-white/5 border border-gray-800 rounded-xl px-6 py-6 flex flex-col justify-center">
-              <div className="mb-2">
-                <span className="text-lg font-semibold text-white">Users</span>
-              </div>
-              <div className="text-2xl font-extrabold text-white">
-                {hasConnectedProviders ? `${users?.length || 0} users` : 'N/A'}
-              </div>
-            </div>
-            <div className="bg-white/5 border border-gray-800 rounded-xl px-6 py-6 flex flex-col justify-center">
-              <div className="mb-2">
-                <span className="text-lg font-semibold text-white">Roles</span>
-              </div>
-              <div className="text-2xl font-extrabold text-white">
-                {hasConnectedProviders ? `${roles?.length || 0} roles` : 'N/A'}
-              </div>
-            </div>
-            <div className="bg-white/5 border border-gray-800 rounded-xl px-6 py-6 flex flex-col justify-center">
-              <div className="mb-2">
-                <span className="text-lg font-semibold text-white">API Keys</span>
-              </div>
-              <div className="text-2xl font-extrabold text-white">
-                {hasConnectedProviders ? `${totalAccessKeys} active keys` : 'N/A'}
-              </div>
-            </div>
           </div>
 
           {/* Filters */}
@@ -966,7 +921,7 @@ export default function Permissions() {
           <div className="bg-[#1a1f28] border border-[#23272f] rounded-lg overflow-hidden">
             <div className="px-5 py-4 border-b border-[#23272f]">
               <h2 className="text-xl font-semibold text-white">
-                {hasConnectedProviders ? 'Identity Entities' : 'No Providers Connected'}
+                {hasConnectedProviders ? `Identity Entities (${allEntities.length} entities)` : 'No Providers Connected'}
               </h2>
             </div>
 
