@@ -2,74 +2,94 @@ import { useState, useEffect } from "react";
 import { useLoaderData, useSubmit, useActionData, Form } from "@remix-run/react";
 import { json, redirect, type HeadersFunction } from "@remix-run/node";
 import type { ActionFunction, LoaderFunction } from "@remix-run/node";
-import { AlertCircle, CheckCircle, XCircle, Save, Edit2, X, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, XCircle, Save, User, Mail, Bell, Shield, Calendar, ToggleLeft, ToggleRight } from "lucide-react";
 import { Button, Input, Label } from "~/components/ui";
-import { getAwsCredentials, setAwsCredentials } from "~/utils/session.server";
-import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { auth, getCurrentUser, db } from "~/lib/firebase";
+import { onAuthStateChanged, type User as FirebaseUser } from "firebase/auth";
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  updateDoc, 
+  doc, 
+  addDoc,
+  serverTimestamp 
+} from "firebase/firestore";
 
 interface LoaderData {
-  awsCredentials: {
-    accessKeyId: string;
-    secretAccessKey: string;
-    region: string;
+  user: {
+    email: string | null;
+    uid: string;
+    emailVerified: boolean;
+    createdAt?: string;
+    lastSignInAt?: string;
   } | null;
   status?: {
     type: "success" | "error";
     message: string;
   };
-}
-
-// Add validation function
-async function validateAwsCredentials(accessKeyId: string, secretAccessKey: string, region: string) {
-  try {
-    const stsClient = new STSClient({
-      credentials: {
-        accessKeyId,
-        secretAccessKey,
-      },
-      region,
-    });
-
-    const command = new GetCallerIdentityCommand({});
-    await stsClient.send(command);
-    return { isValid: true };
-  } catch (error) {
-    console.error("AWS credentials validation failed:", error);
-    return { 
-      isValid: false, 
-      error: error instanceof Error ? error.message : "Failed to validate AWS credentials" 
-    };
-  }
+  settings: {
+    emailNotificationsEnabled: boolean;
+    reportFrequency: string;
+    reportEmailAddress: string;
+    companyName: string;
+  };
 }
 
 export const loader: LoaderFunction = async ({ request }) => {
   try {
-    // Try to get credentials from session first
-    const sessionCredentials = await getAwsCredentials(request);
+    // Get current user from Firebase Auth
+    const currentUser = await getCurrentUser();
     
-    if (sessionCredentials) {
-      return json({
-        awsCredentials: {
-          ...sessionCredentials,
-          secretAccessKey: "••••••••••••••••", // Masked for security
-        },
-      });
+    if (!currentUser) {
+      return redirect("/sign-in");
     }
 
-    // If no session data, return empty credentials
+    // Try to get existing settings from Firestore
+    let userSettings = {
+      emailNotificationsEnabled: true,
+      reportFrequency: "weekly",
+      reportEmailAddress: "",
+      companyName: "",
+    };
+
+    try {
+      const clientsRef = collection(db, "clients");
+      const q = query(clientsRef, where("email", "==", currentUser.email));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
+        const userDoc = querySnapshot.docs[0].data();
+        userSettings = {
+          emailNotificationsEnabled: userDoc.emailNotificationsEnabled ?? true,
+          reportFrequency: userDoc.reportFrequency ?? "weekly",
+          reportEmailAddress: userDoc.reportEmailAddress ?? "",
+          companyName: userDoc.companyName ?? "",
+        };
+      }
+    } catch (firestoreError) {
+      console.error("Error loading user settings from Firestore:", firestoreError);
+      // Continue with default settings if Firestore fails
+    }
+
     return json({
-      awsCredentials: {
-        accessKeyId: "",
-        secretAccessKey: "",
-        region: "",
+      user: {
+        email: currentUser.email,
+        uid: currentUser.uid,
+        emailVerified: currentUser.emailVerified,
+        createdAt: currentUser.metadata.creationTime,
+        lastSignInAt: currentUser.metadata.lastSignInTime,
       },
+      settings: userSettings,
     });
   } catch (error) {
+    console.error("Error loading user data:", error);
     return json({
-      awsCredentials: null,
+      user: null,
       status: {
         type: "error",
-        message: "Failed to load AWS credentials",
+        message: "Failed to load user data",
       },
     });
   }
@@ -77,222 +97,152 @@ export const loader: LoaderFunction = async ({ request }) => {
 
 export const action: ActionFunction = async ({ request }) => {
   const formData = await request.formData();
-  const accessKeyId = formData.get("accessKeyId")?.toString().trim();
-  const secretAccessKey = formData.get("secretAccessKey")?.toString().trim();
-  const region = formData.get("region")?.toString().trim();
-
-  console.log("Debug - Form submission:", { 
-    accessKeyId, 
-    hasSecretKey: !!secretAccessKey, 
-    region 
-  });
-
-  if (!accessKeyId || !region) {
-    return json({
-      status: {
-        type: "error",
-        message: "Access Key ID and Region are required",
-      },
-    });
-  }
-
-  // Only require secret key if it's being changed
-  const existingCredentials = await getAwsCredentials(request);
-  console.log("Debug - Existing credentials:", existingCredentials ? "Found" : "Not found");
-
-  if (!existingCredentials?.secretAccessKey && !secretAccessKey) {
-    return json({
-      status: {
-        type: "error",
-        message: "Secret Access Key is required for new credentials",
-      },
-    });
-  }
-
-  // Validate credentials before saving
-  const finalSecretKey = secretAccessKey || existingCredentials?.secretAccessKey || "";
-  const validation = await validateAwsCredentials(accessKeyId, finalSecretKey, region);
-  
-  if (!validation.isValid) {
-    return json({
-      status: {
-        type: "error",
-        message: `Invalid AWS credentials: ${validation.error}`,
-      },
-    });
-  }
+  const emailNotificationsEnabled = formData.get("emailNotificationsEnabled") === "true";
+  const emailNotifications = formData.get("emailNotifications")?.toString() || "weekly";
+  const reportEmail = formData.get("reportEmail")?.toString() || "";
+  const companyName = formData.get("companyName")?.toString().trim() || "";
 
   try {
-    // Save credentials to session only if validation passed
-    const cookieHeader = await setAwsCredentials(request, {
-      accessKeyId,
-      secretAccessKey: finalSecretKey,
-      region,
-    });
-
-    console.log("Debug - Cookie header after save:", cookieHeader);
-
-    if (!cookieHeader) {
-      throw new Error("Failed to save credentials to session");
+    // Get current user
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      return json({
+        status: {
+          type: "error",
+          message: "User not authenticated",
+        },
+      });
     }
 
-    // Create the response with the cookie
-    const response = json(
-      {
-        status: {
-          type: "success",
-          message: "AWS credentials saved successfully",
-        },
-        awsCredentials: {
-          accessKeyId,
-          secretAccessKey: "••••••••••••••••", // Masked for security
-          region,
-        },
+    // Check if user already exists in clients collection
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", currentUser.email));
+    const querySnapshot = await getDocs(q);
+
+    const settingsData = {
+      emailNotificationsEnabled: emailNotificationsEnabled,
+      reportFrequency: emailNotifications,
+      reportEmailAddress: reportEmail || currentUser.email,
+      companyName: companyName,
+      lastSettingsUpdate: serverTimestamp(),
+    };
+
+    if (!querySnapshot.empty) {
+      // User exists, update their settings
+      const userDoc = querySnapshot.docs[0];
+      await updateDoc(doc(db, "clients", userDoc.id), settingsData);
+      console.log("Updated client settings for:", currentUser.email);
+    } else {
+      // User doesn't exist, create new document with settings
+      const newClientData = {
+        email: currentUser.email,
+        lastSignInAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        ...settingsData
+      };
+
+      const docRef = await addDoc(collection(db, "clients"), newClientData);
+      console.log("Created new client document with settings, ID:", docRef.id);
+    }
+    
+    return json({
+      status: {
+        type: "success",
+        message: "Settings saved successfully",
       },
-      { 
-        headers: {
-          "Set-Cookie": cookieHeader
-        }
-      }
-    );
-
-    // Log the response headers
-    console.log("Debug - Response headers:", {
-      setCookie: response.headers.get("Set-Cookie"),
-      allHeaders: Object.fromEntries(response.headers.entries())
     });
-
-    return response;
   } catch (error) {
-    console.error("Error saving credentials:", error);
+    console.error("Error saving settings to Firestore:", error);
     return json({
       status: {
         type: "error",
-        message: "Failed to save AWS credentials",
+        message: "Failed to save settings",
       },
     });
   }
 };
 
 export default function Settings() {
-  const { awsCredentials: initialCredentials, status: initialStatus } = useLoaderData<LoaderData>();
+  const { user, status: initialStatus, settings } = useLoaderData<LoaderData>();
   const actionData = useActionData<LoaderData>();
   const submit = useSubmit();
-  const [isEditing, setIsEditing] = useState(!initialCredentials?.accessKeyId);
-  const [formData, setFormData] = useState({
-    accessKeyId: initialCredentials?.accessKeyId || "",
-    secretAccessKey: "",
-    region: initialCredentials?.region || "",
-  });
-
-  // Log initial state
-  useEffect(() => {
-    console.log("Debug - Initial credentials:", {
-      hasInitialCredentials: !!initialCredentials,
-      hasAccessKeyId: !!initialCredentials?.accessKeyId,
-      isEditing,
-      cookies: document.cookie
-    });
-  }, [initialCredentials, isEditing]);
-
-  // Log when action data changes
-  useEffect(() => {
-    if (actionData) {
-      console.log("Debug - Action data received:", {
-        status: actionData.status,
-        hasCredentials: !!actionData.awsCredentials,
-        cookies: document.cookie
-      });
-    }
-  }, [actionData]);
-
-  // Update form data when action data changes
-  useEffect(() => {
-    if (actionData?.awsCredentials) {
-      setFormData({
-        accessKeyId: actionData.awsCredentials.accessKeyId,
-        secretAccessKey: "",
-        region: actionData.awsCredentials.region,
-      });
-      setIsEditing(false);
-    }
-  }, [actionData]);
-
-  // Update form data when initial credentials change
-  useEffect(() => {
-    if (initialCredentials) {
-      setFormData({
-        accessKeyId: initialCredentials.accessKeyId,
-        secretAccessKey: "",
-        region: initialCredentials.region,
-      });
-    }
-  }, [initialCredentials]);
-
-  const handleEdit = () => {
-    console.log("Edit button clicked");
-    console.log("Current isEditing state:", isEditing);
-    setIsEditing(true);
-    console.log("New isEditing state:", true);
-    // Keep existing values but clear the secret key
-    setFormData({
-      ...formData,
-      secretAccessKey: "",
-    });
-    console.log("Form data updated:", { ...formData, secretAccessKey: "" });
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-    // Reset form data to initial values
-    setFormData({
-      accessKeyId: initialCredentials?.accessKeyId || "",
-      secretAccessKey: "",
-      region: initialCredentials?.region || "",
-    });
-  };
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const formData = new FormData(form);
-    
-    // If we're editing and the secret key is empty, don't include it
-    if (isEditing && !formData.get("secretAccessKey")) {
-      formData.delete("secretAccessKey");
-    }
-    
-    console.log("Debug - Submitting form:", {
-      accessKeyId: formData.get("accessKeyId"),
-      hasSecretKey: !!formData.get("secretAccessKey"),
-      region: formData.get("region"),
-      cookies: document.cookie
-    });
-    
-    submit(formData, { method: "post" });
-  };
+  const [emailNotificationsEnabled, setEmailNotificationsEnabled] = useState(settings?.emailNotificationsEnabled ?? true);
+  const [emailNotifications, setEmailNotifications] = useState(settings?.reportFrequency ?? "weekly");
+  const [reportEmail, setReportEmail] = useState(settings?.reportEmailAddress ?? "");
+  const [companyName, setCompanyName] = useState(settings?.companyName ?? "");
+  const [isEditingCompany, setIsEditingCompany] = useState(false);
 
   // Use action data status if available, otherwise use initial status
   const status = actionData?.status || initialStatus;
 
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return "N/A";
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "Invalid Date";
+    }
+  };
+
+  const handleToggleEmailNotifications = () => {
+    setEmailNotificationsEnabled(!emailNotificationsEnabled);
+  };
+
+  const handleEmailNotificationChange = (value: string) => {
+    setEmailNotifications(value);
+  };
+
+  const handleSaveSettings = () => {
+    const formData = new FormData();
+    formData.append("emailNotificationsEnabled", emailNotificationsEnabled.toString());
+    formData.append("emailNotifications", emailNotifications);
+    formData.append("reportEmail", reportEmail);
+    formData.append("companyName", companyName);
+    submit(formData, { method: "post" });
+  };
+
+  const handleEditCompany = () => {
+    setIsEditingCompany(true);
+  };
+
+  const handleCancelEditCompany = () => {
+    setIsEditingCompany(false);
+    setCompanyName(""); // Reset to empty
+  };
+
+  const handleSaveCompany = () => {
+    setIsEditingCompany(false);
+    // Save immediately when user confirms
+    const formData = new FormData();
+    formData.append("emailNotificationsEnabled", emailNotificationsEnabled.toString());
+    formData.append("emailNotifications", emailNotifications);
+    formData.append("reportEmail", reportEmail);
+    formData.append("companyName", companyName);
+    submit(formData, { method: "post" });
+  };
+
+  if (!user) {
+    return (
+      <div className="p-8 pt-6 w-full max-w-full min-h-screen bg-[#181C23] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-400">Loading user data...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 pt-6 w-full max-w-full min-h-screen bg-[#181C23]">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-4xl font-bold text-white">AWS Settings</h1>
-          {!isEditing && initialCredentials?.accessKeyId && (
-            <button
-              type="button"
-              onClick={() => {
-                console.log("Button clicked - Debug");
-                handleEdit();
-              }}
-              className="bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2 px-4 py-2 rounded-md"
-            >
-              <Edit2 className="w-4 h-4" />
-              Edit Credentials
-            </button>
-          )}
+          <h1 className="text-4xl font-bold text-white">Settings</h1>
         </div>
 
         {/* Status Message */}
@@ -313,113 +263,248 @@ export default function Settings() {
           </div>
         )}
 
-        {/* AWS Credentials Form */}
-        <div className="bg-[#1a1f28] rounded-xl p-6 border border-[#23272f]">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-semibold text-white">AWS Credentials</h2>
-            {isEditing && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-blue-400 bg-blue-900/20 px-3 py-1 rounded-full">
-                  Editing Mode
-                </span>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* User Information */}
+          <div className="bg-[#1a1f28] rounded-xl p-6 border border-[#23272f]">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-blue-600/20 rounded-lg">
+                <User className="w-6 h-6 text-blue-400" />
               </div>
-            )}
-          </div>
-
-          <Form method="post" onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="accessKeyId" className="text-gray-300">
-                  AWS Access Key ID
-                </Label>
-                <Input
-                  id="accessKeyId"
-                  name="accessKeyId"
-                  value={formData.accessKeyId}
-                  onChange={(e) => setFormData({ ...formData, accessKeyId: e.target.value })}
-                  disabled={!isEditing}
-                  className={`mt-1 bg-[#23272f] border-[#2d333b] text-white ${
-                    !isEditing ? "opacity-75 cursor-not-allowed" : ""
-                  }`}
-                  placeholder="Enter your AWS Access Key ID"
-                  required
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="secretAccessKey" className="text-gray-300">
-                  AWS Secret Access Key
-                </Label>
-                <Input
-                  id="secretAccessKey"
-                  name="secretAccessKey"
-                  type="password"
-                  value={formData.secretAccessKey}
-                  onChange={(e) => setFormData({ ...formData, secretAccessKey: e.target.value })}
-                  disabled={!isEditing}
-                  className={`mt-1 bg-[#23272f] border-[#2d333b] text-white ${
-                    !isEditing ? "opacity-75 cursor-not-allowed" : ""
-                  }`}
-                  placeholder={isEditing ? "Enter your AWS Secret Access Key" : "••••••••••••••••"}
-                  required={!initialCredentials?.accessKeyId} // Only required for new credentials
-                />
-              </div>
-
-              <div>
-                <Label htmlFor="region" className="text-gray-300">
-                  AWS Region
-                </Label>
-                <Input
-                  id="region"
-                  name="region"
-                  value={formData.region}
-                  onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-                  disabled={!isEditing}
-                  className={`mt-1 bg-[#23272f] border-[#2d333b] text-white ${
-                    !isEditing ? "opacity-75 cursor-not-allowed" : ""
-                  }`}
-                  placeholder="Enter your AWS Region (e.g., us-east-1)"
-                  required
-                />
-              </div>
+              <h2 className="text-xl font-semibold text-white">User Information</h2>
             </div>
 
-            {isEditing && (
-              <div className="flex gap-4 pt-4 border-t border-[#23272f]">
-                <Button
-                  type="submit"
-                  className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
-                >
-                  <Save className="w-4 h-4" />
-                  Save Credentials
-                </Button>
-                <Button
-                  type="button"
-                  onClick={handleCancel}
-                  className="bg-gray-600 hover:bg-gray-700 text-white flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  Cancel
-                </Button>
+            <div className="space-y-4">
+              <div>
+                <Label className="text-gray-400 text-sm">Email Address</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Mail className="w-4 h-4 text-gray-500" />
+                  <p className="text-white font-medium">{user.email}</p>
+                  {user.emailVerified && (
+                    <span className="bg-green-900/20 text-green-400 text-xs px-2 py-1 rounded-full border border-green-500/20">
+                      Verified
+                    </span>
+                  )}
+                </div>
               </div>
-            )}
-          </Form>
 
-          {/* Help Text */}
-          <div className="mt-6 p-4 bg-[#23272f] rounded-lg">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
-              <div className="text-sm text-gray-300">
-                <p className="font-medium text-white mb-2">How to get your AWS credentials:</p>
-                <ol className="list-decimal list-inside space-y-1 ml-2">
-                  <li>Log in to the <a href="https://console.aws.amazon.com" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">AWS Console</a></li>
-                  <li>Click your username in the top right</li>
-                  <li>Select "Security credentials"</li>
-                  <li>Under "Access keys", click "Create access key"</li>
-                  <li>Save your Access Key ID and Secret Access Key</li>
-                  <li>For Region, use the region code from the top right of your AWS Console (e.g., us-east-1)</li>
-                </ol>
+              <div>
+                <Label className="text-gray-400 text-sm">Company Name</Label>
+                <div className="mt-1">
+                  {isEditingCompany ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={companyName}
+                        onChange={(e) => setCompanyName(e.target.value)}
+                        placeholder="Enter your company name"
+                        className="bg-[#23272f] border-[#2d333b] text-white"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleSaveCompany}
+                          size="sm"
+                          className="bg-green-600 hover:bg-green-700 text-white"
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          onClick={handleCancelEditCompany}
+                          size="sm"
+                          variant="outline"
+                          className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-purple-600/20 rounded">
+                          <User className="w-4 h-4 text-purple-400" />
+                        </div>
+                        <p className="text-white">
+                          {companyName || "No company name set"}
+                        </p>
+                      </div>
+                      <Button
+                        onClick={handleEditCompany}
+                        size="sm"
+                        variant="outline"
+                        className="border-gray-600 text-gray-300 hover:bg-gray-700"
+                      >
+                        {companyName ? "Edit" : "Add"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              <div>
+                <Label className="text-gray-400 text-sm">User ID</Label>
+                <p className="text-gray-300 text-sm font-mono mt-1">{user.uid}</p>
+              </div>
+
+              <div>
+                <Label className="text-gray-400 text-sm">Account Created</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Calendar className="w-4 h-4 text-gray-500" />
+                  <p className="text-white">{formatDate(user.createdAt)}</p>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-gray-400 text-sm">Last Sign In</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Calendar className="w-4 h-4 text-gray-500" />
+                  <p className="text-white">{formatDate(user.lastSignInAt)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Email Notifications */}
+          <div className="bg-[#1a1f28] rounded-xl p-6 border border-[#23272f]">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-purple-600/20 rounded-lg">
+                <Bell className="w-6 h-6 text-purple-400" />
+              </div>
+              <h2 className="text-xl font-semibold text-white">Email Notifications</h2>
+            </div>
+
+            <div className="space-y-6">
+              {/* Enable/Disable Toggle */}
+              <div className="flex items-center justify-between p-4 bg-[#23272f] rounded-lg">
+                <div className="flex items-start gap-3">
+                  <div className="p-1.5 bg-blue-600/20 rounded">
+                    <Bell className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-medium">Email Notifications</h3>
+                    <p className="text-gray-400 text-sm mt-1">
+                      {emailNotificationsEnabled 
+                        ? "Receive security reports via email" 
+                        : "Email notifications are currently disabled"
+                      }
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleEmailNotifications}
+                  className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors"
+                >
+                  {emailNotificationsEnabled ? (
+                    <ToggleRight className="w-6 h-6 text-blue-400" />
+                  ) : (
+                    <ToggleLeft className="w-6 h-6" />
+                  )}
+                </button>
+              </div>
+
+              {/* Report Email Input - Only show when enabled */}
+              {emailNotificationsEnabled && (
+                <div className="p-4 bg-[#23272f] rounded-lg">
+                  <h3 className="text-white font-medium mb-3">Report Email Address</h3>
+                  <div className="space-y-2">
+                    <Label htmlFor="reportEmail" className="text-gray-400 text-sm">
+                      Where should we send the security reports?
+                    </Label>
+                    <Input
+                      id="reportEmail"
+                      type="email"
+                      value={reportEmail}
+                      onChange={(e) => setReportEmail(e.target.value)}
+                      placeholder="Enter email address for reports"
+                      className="bg-[#2d333b] border-[#4a5568] text-white"
+                    />
+                    <p className="text-gray-500 text-xs">
+                      Leave empty to use your account email: {user.email}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Report Frequency Section - Only show when enabled */}
+              {emailNotificationsEnabled && (
+                <div className="p-4 bg-[#23272f] rounded-lg">
+                  <h3 className="text-white font-medium mb-3">Report Frequency</h3>
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="emailNotifications"
+                        value="weekly"
+                        checked={emailNotifications === "weekly"}
+                        onChange={(e) => handleEmailNotificationChange(e.target.value)}
+                        className="w-4 h-4 text-blue-600 bg-[#2d333b] border-[#4a5568] focus:ring-blue-500 focus:ring-2"
+                      />
+                      <div className="flex items-start gap-3">
+                        <div className="p-1.5 bg-blue-600/20 rounded">
+                          <Bell className="w-4 h-4 text-blue-400" />
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">Weekly Reports</p>
+                          <p className="text-gray-400 text-sm">
+                            Receive security reports every week
+                          </p>
+                        </div>
+                      </div>
+                    </label>
+
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="emailNotifications"
+                        value="monthly"
+                        checked={emailNotifications === "monthly"}
+                        onChange={(e) => handleEmailNotificationChange(e.target.value)}
+                        className="w-4 h-4 text-blue-600 bg-[#2d333b] border-[#4a5568] focus:ring-blue-500 focus:ring-2"
+                      />
+                      <div className="flex items-start gap-3">
+                        <div className="p-1.5 bg-green-600/20 rounded">
+                          <Calendar className="w-4 h-4 text-green-400" />
+                        </div>
+                        <div>
+                          <p className="text-white font-medium">Monthly Reports</p>
+                          <p className="text-gray-400 text-sm">
+                            Receive security reports every month
+                          </p>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-[#23272f]">
+              <Button
+                onClick={handleSaveSettings}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
+              >
+                <Save className="w-4 h-4" />
+                Save Settings
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Help Section */}
+        <div className="mt-8 bg-[#1a1f28] rounded-xl p-6 border border-[#23272f]">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
+            <div className="text-sm text-gray-300">
+              <p className="font-medium text-white mb-2">About Email Reports</p>
+              <p className="mb-2">
+                Your security reports will include:
+              </p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li>Security risk assessments</li>
+                <li>User activity summaries</li>
+                <li>Policy compliance status</li>
+                <li>Recommended security actions</li>
+                <li>System health overview</li>
+              </ul>
             </div>
           </div>
         </div>
