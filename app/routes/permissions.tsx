@@ -867,7 +867,11 @@ export default function Permissions() {
           </div>
 
           {/* Quick Risk Factor Filters */}
-          <div className="bg-[#1a1f28] border border-[#23272f] rounded-lg p-4">
+          <div className={`border rounded-lg p-4 transition-all duration-200 ${
+            riskFactorFilter 
+              ? 'bg-[#1a1f28] border-blue-500/30 shadow-lg shadow-blue-500/10' 
+              : 'bg-[#1a1f28] border-[#23272f]'
+          }`}>
             <div className="flex items-center gap-2 mb-3">
               <Filter className="w-4 h-4 text-gray-400" />
               <span className="text-sm font-medium text-gray-300">Quick Risk Factor Filters</span>
@@ -881,12 +885,12 @@ export default function Permissions() {
                 // Get color classes based on factor color
                 const getColorClasses = (color: string, isActive: boolean) => {
                   const colorMap = {
-                    red: isActive ? 'bg-red-900/50 border border-red-500/50 text-red-200' : 'bg-red-900/30 border border-red-500/30 text-red-300 hover:bg-red-900/50 hover:border-red-500/50',
-                    orange: isActive ? 'bg-orange-900/50 border border-orange-500/50 text-orange-200' : 'bg-orange-900/30 border border-orange-500/30 text-orange-300 hover:bg-orange-900/50 hover:border-orange-500/50',
-                    yellow: isActive ? 'bg-yellow-900/50 border border-yellow-500/50 text-yellow-200' : 'bg-yellow-900/30 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-900/50 hover:border-yellow-500/50',
-                    purple: isActive ? 'bg-purple-900/50 border border-purple-500/50 text-purple-200' : 'bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500/50',
-                    gray: isActive ? 'bg-gray-900/50 border border-gray-500/50 text-gray-200' : 'bg-gray-900/30 border border-gray-500/30 text-gray-300 hover:bg-gray-900/50 hover:border-gray-500/50',
-                    blue: isActive ? 'bg-blue-900/50 border border-blue-500/50 text-blue-200' : 'bg-blue-900/30 border border-blue-500/30 text-blue-300 hover:bg-blue-900/50 hover:border-blue-500/50'
+                    red: isActive ? 'bg-red-900/60 border-2 border-red-400 text-red-100 shadow-lg shadow-red-500/20' : 'bg-red-900/30 border border-red-500/30 text-red-300 hover:bg-red-900/50 hover:border-red-500/50',
+                    orange: isActive ? 'bg-orange-900/60 border-2 border-orange-400 text-orange-100 shadow-lg shadow-orange-500/20' : 'bg-orange-900/30 border border-orange-500/30 text-orange-300 hover:bg-orange-900/50 hover:border-orange-500/50',
+                    yellow: isActive ? 'bg-yellow-900/60 border-2 border-yellow-400 text-yellow-100 shadow-lg shadow-yellow-500/20' : 'bg-yellow-900/30 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-900/50 hover:border-yellow-500/50',
+                    purple: isActive ? 'bg-purple-900/60 border-2 border-purple-400 text-purple-100 shadow-lg shadow-purple-500/20' : 'bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500/50',
+                    gray: isActive ? 'bg-gray-900/60 border-2 border-gray-400 text-gray-100 shadow-lg shadow-gray-500/20' : 'bg-gray-900/30 border border-gray-500/30 text-gray-300 hover:bg-gray-900/50 hover:border-gray-500/50',
+                    blue: isActive ? 'bg-blue-900/60 border-2 border-blue-400 text-blue-100 shadow-lg shadow-blue-500/20' : 'bg-blue-900/30 border border-blue-500/30 text-blue-300 hover:bg-blue-900/50 hover:border-blue-500/50'
                   };
                   return colorMap[color as keyof typeof colorMap] || colorMap.blue;
                 };
@@ -903,10 +907,14 @@ export default function Permissions() {
                       setProviderFilter('all');
                       setRiskFactorFilter(isActive ? null : filterKey);
                     }}
-                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${getColorClasses(factor.color, isActive)}`}
+                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${getColorClasses(factor.color, isActive)} ${isActive ? 'ring-2 ring-white/20 scale-105' : 'hover:scale-105'}`}
+                    title={isActive ? `Filtering by: ${factor.label}` : `Filter by: ${factor.label}`}
                   >
                     <IconComponent className="w-3 h-3" />
                     {factor.label} ({factor.count})
+                    {isActive && (
+                      <div className="ml-1 w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                    )}
                   </button>
                 );
               })}
