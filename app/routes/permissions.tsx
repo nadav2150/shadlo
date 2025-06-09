@@ -1,12 +1,14 @@
 import React from "react";
-import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Settings, Cloud, Mail, ChevronUp } from "lucide-react";
-import { useLoaderData } from "@remix-run/react";
+import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Settings, Cloud, Mail, ChevronUp, Clock, Ban, Crown, Activity, Download, FileText } from "lucide-react";
+import { useLoaderData, Link } from "@remix-run/react";
 import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
 import { useState, useMemo } from "react";
 import { getGoogleCredentials } from "~/utils/session.google.server";
 import { calculateRiskScore } from "~/lib/iam/google-risk-assessment";
 import { validateGoogleCredentials } from "~/utils/google-credentials.server";
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Policy {
   name: string;
@@ -762,6 +764,93 @@ export default function Permissions() {
     return null;
   };
 
+  const generatePDF = () => {
+    const doc = new jsPDF();
+
+    // Add header
+    doc.setFontSize(16);
+    doc.text('Identity Entities Report', 15, 20);
+    doc.setFontSize(12);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 15, 30);
+    doc.text(`Total Entities: ${allEntities.length}`, 15, 35);
+
+    // Prepare table data
+    const columns = ['Name', 'Type', 'Provider', 'Created', 'Last Used', 'MFA', 'Risk Level', 'Risk Factors'];
+    const data = allEntities.map(entity => {
+      const riskFactors = entity.riskAssessment?.factors || [];
+      const riskFactorText = riskFactors.length > 0 
+        ? riskFactors.slice(0, 3).join(', ') + (riskFactors.length > 3 ? '...' : '')
+        : 'None';
+      
+      return [
+        entity.type === 'user' ? getUserDisplayName(entity as IAMUser | GoogleUser) : (entity as IAMRole).roleName,
+        entity.type,
+        entity.provider === 'aws' ? 'AWS' : entity.provider === 'google' ? 'Google' : 'Unknown',
+        formatDate(entity.createDate),
+        formatDate(entity.lastUsed),
+        entity.type === 'user' && (entity as IAMUser).hasMFA ? 'Enabled' : 'Disabled',
+        getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low').label,
+        riskFactorText
+      ];
+    });
+
+    // Generate table
+    autoTable(doc, {
+      head: [columns],
+      body: data,
+      startY: 45,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [41, 128, 185],
+        textColor: [255, 255, 255],
+        fontSize: 10,
+        fontStyle: 'bold'
+      },
+      bodyStyles: {
+        fontSize: 9
+      },
+      styles: {
+        cellWidth: 'auto'
+      },
+      columnStyles: {
+        0: { cellWidth: 35 },
+        1: { cellWidth: 15 },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 25 },
+        5: { cellWidth: 15 },
+        6: { cellWidth: 20 },
+        7: { cellWidth: 30 }
+      },
+      alternateRowStyles: {
+        fillColor: [248, 249, 250]
+      },
+      margin: { top: 45 }
+    });
+
+    // Add risk factors summary
+    const riskFactorsSummary = getAllRiskFactors();
+    if (riskFactorsSummary.size > 0) {
+      const currentY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFontSize(14);
+      doc.text('Risk Factors Summary', 15, currentY);
+      
+      let yPos = currentY + 10;
+      riskFactorsSummary.forEach((factor, key) => {
+        if (yPos > 250) {
+          doc.addPage();
+          yPos = 20;
+        }
+        doc.setFontSize(10);
+        doc.text(`${factor.label}: ${factor.count} entities`, 15, yPos);
+        yPos += 5;
+      });
+    }
+
+    // Save the PDF
+    doc.save('identity_entities_report.pdf');
+  };
+
   return (
     <div className="min-h-screen bg-[#0f1117] text-white">
       <div className="container mx-auto px-4 py-8">
@@ -919,10 +1008,22 @@ export default function Permissions() {
 
           {/* Table Section */}
           <div className="bg-[#1a1f28] border border-[#23272f] rounded-lg overflow-hidden">
-            <div className="px-5 py-4 border-b border-[#23272f]">
+            <div className="px-5 py-4 border-b border-[#23272f] flex justify-between items-center">
               <h2 className="text-xl font-semibold text-white">
                 {hasConnectedProviders ? `Identity Entities (${allEntities.length} entities)` : 'No Providers Connected'}
               </h2>
+              
+              {/* PDF Export Button */}
+              {hasConnectedProviders && (
+                <button
+                  onClick={generatePDF}
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 border border-blue-500 rounded-lg text-sm font-medium text-white transition-colors"
+                  title="Export table data to PDF"
+                >
+                  <FileText className="w-4 h-4" />
+                  Export PDF
+                </button>
+              )}
             </div>
 
             {/* Only show table if we have connected providers */}
