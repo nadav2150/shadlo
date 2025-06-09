@@ -104,15 +104,21 @@ export async function saveClientSignInData(email: string): Promise<void> {
       });
       console.log("Updated existing client sign-in data for:", email);
     } else {
-      // User doesn't exist, create new document
+      // User doesn't exist, create new document with default settings
       const clientData = {
         email: email,
         lastSignInAt: serverTimestamp(),
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        // Default email notification settings
+        emailNotificationsEnabled: true,
+        reportFrequency: "weekly",
+        reportEmailAddress: email, // Use the user's sign-in email as default
+        companyName: "",
+        lastSettingsUpdate: serverTimestamp()
       };
 
       const docRef = await addDoc(collection(db, "clients"), clientData);
-      console.log("Created new client document with ID:", docRef.id);
+      console.log("Created new client document with default settings, ID:", docRef.id);
     }
   } catch (error) {
     console.error("Error saving client sign-in data:", error);
