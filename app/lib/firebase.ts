@@ -105,16 +105,32 @@ export async function saveClientSignInData(email: string): Promise<void> {
       console.log("Updated existing client sign-in data for:", email);
     } else {
       // User doesn't exist, create new document with default settings
+      // Calculate sendOnEmailDate based on default report frequency (weekly = 7 days)
+      const currentDate = new Date();
+      const defaultReportFrequency = "weekly"; // Default to weekly
+      const defaultEmailNotificationsEnabled = true; // Default to enabled
+      
+      // Calculate days to add based on frequency
+      const getDaysToAdd = (frequency: string) => {
+        return frequency === "monthly" ? 30 : 7;
+      };
+      
+      const daysToAdd = getDaysToAdd(defaultReportFrequency);
+      const sendOnEmailDate = defaultEmailNotificationsEnabled 
+        ? new Date(currentDate.getTime() + (daysToAdd * 24 * 60 * 60 * 1000))
+        : null;
+      
       const clientData = {
         email: email,
         lastSignInAt: serverTimestamp(),
         createdAt: serverTimestamp(),
         // Default email notification settings
-        emailNotificationsEnabled: true,
-        reportFrequency: "weekly",
+        emailNotificationsEnabled: defaultEmailNotificationsEnabled,
+        reportFrequency: defaultReportFrequency,
         reportEmailAddress: email, // Use the user's sign-in email as default
         companyName: "",
-        lastSettingsUpdate: serverTimestamp()
+        lastSettingsUpdate: serverTimestamp(),
+        sendOnEmailDate: sendOnEmailDate
       };
 
       const docRef = await addDoc(collection(db, "clients"), clientData);

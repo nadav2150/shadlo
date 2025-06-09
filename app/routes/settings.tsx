@@ -34,6 +34,7 @@ interface LoaderData {
     reportFrequency: string;
     reportEmailAddress: string;
     companyName: string;
+    sendOnEmailDate?: string;
   };
 }
 
@@ -52,6 +53,7 @@ export const loader: LoaderFunction = async ({ request }) => {
       reportFrequency: "weekly",
       reportEmailAddress: "",
       companyName: "",
+      sendOnEmailDate: "",
     };
 
     try {
@@ -61,11 +63,27 @@ export const loader: LoaderFunction = async ({ request }) => {
 
       if (!querySnapshot.empty) {
         const userDoc = querySnapshot.docs[0].data();
+        // Handle sendOnEmailDate - convert Firestore timestamp to string if needed
+        let sendOnEmailDate = "";
+        if (userDoc.sendOnEmailDate !== null && userDoc.sendOnEmailDate !== undefined) {
+          if (userDoc.sendOnEmailDate.toDate) {
+            // It's a Firestore timestamp
+            sendOnEmailDate = userDoc.sendOnEmailDate.toDate().toISOString();
+          } else if (userDoc.sendOnEmailDate instanceof Date) {
+            // It's already a Date object
+            sendOnEmailDate = userDoc.sendOnEmailDate.toISOString();
+          } else {
+            // It's already a string
+            sendOnEmailDate = userDoc.sendOnEmailDate;
+          }
+        }
+        
         userSettings = {
           emailNotificationsEnabled: userDoc.emailNotificationsEnabled ?? true,
           reportFrequency: userDoc.reportFrequency ?? "weekly",
           reportEmailAddress: userDoc.reportEmailAddress ?? "",
           companyName: userDoc.companyName ?? "",
+          sendOnEmailDate: sendOnEmailDate,
         };
       }
     } catch (firestoreError) {
@@ -119,12 +137,39 @@ export const action: ActionFunction = async ({ request }) => {
     const q = query(clientsRef, where("email", "==", currentUser.email));
     const querySnapshot = await getDocs(q);
 
+    // Calculate new sendOnEmailDate based on report frequency and account creation date
+    let newSendOnEmailDate = null;
+    if (!querySnapshot.empty && emailNotificationsEnabled) {
+      const userDoc = querySnapshot.docs[0].data();
+      const createdAt = userDoc.createdAt;
+      
+      if (createdAt) {
+        // Get the account creation date
+        let creationDate: Date;
+        if (createdAt.toDate) {
+          // It's a Firestore timestamp
+          creationDate = createdAt.toDate();
+        } else if (createdAt instanceof Date) {
+          // It's already a Date object
+          creationDate = createdAt;
+        } else {
+          // It's a string, try to parse it
+          creationDate = new Date(createdAt);
+        }
+        
+        // Calculate days to add based on frequency
+        const daysToAdd = emailNotifications === "monthly" ? 30 : 7;
+        newSendOnEmailDate = new Date(creationDate.getTime() + (daysToAdd * 24 * 60 * 60 * 1000));
+      }
+    }
+
     const settingsData = {
       emailNotificationsEnabled: emailNotificationsEnabled,
       reportFrequency: emailNotifications,
       reportEmailAddress: reportEmail || currentUser.email,
       companyName: companyName,
       lastSettingsUpdate: serverTimestamp(),
+      sendOnEmailDate: emailNotificationsEnabled ? newSendOnEmailDate : null
     };
 
     if (!querySnapshot.empty) {
@@ -362,6 +407,24 @@ export default function Settings() {
                   <p className="text-white">{formatDate(user.lastSignInAt)}</p>
                 </div>
               </div>
+
+              <div>
+                <Label className="text-gray-400 text-sm">Next Email Report Date</Label>
+                <div className="flex items-center gap-2 mt-1">
+                  <Calendar className="w-4 h-4 text-gray-500" />
+                  <p className="text-white">
+                    {emailNotificationsEnabled 
+                      ? formatDate(settings?.sendOnEmailDate) 
+                      : "Email notifications disabled"
+                    }
+                  </p>
+                </div>
+                {emailNotificationsEnabled && (
+                  <p className="text-gray-500 text-xs mt-1">
+                    Based on account creation + {emailNotifications === "monthly" ? "30" : "7"} days ({emailNotifications} frequency)
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -507,6 +570,10 @@ export default function Settings() {
                 <li>Policy compliance status</li>
                 <li>System health overview</li>
               </ul>
+              <p className="mt-3 text-blue-400">
+                <strong>Next Email Report Date:</strong> Calculated as 7 days (weekly) or 30 days (monthly) after account creation. 
+                Updates when you change frequency. No emails sent when notifications are disabled.
+              </p>
             </div>
           </div>
         </div>
