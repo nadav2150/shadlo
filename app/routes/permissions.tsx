@@ -448,6 +448,122 @@ export default function Permissions() {
     }
   };
 
+  // Helper function to get all unique risk factors from the data
+  const getAllRiskFactors = () => {
+    const riskFactors = new Map<string, { count: number; color: string; icon: any; label: string }>();
+    
+    // Add hardcoded risk factors that are always relevant
+    const noMfaCount = users.filter(user => !user.hasMFA).length;
+    if (noMfaCount > 0) {
+      riskFactors.set('no-mfa', {
+        count: noMfaCount,
+        color: 'red',
+        icon: Lock,
+        label: 'No MFA'
+      });
+    }
+
+    const neverLoggedInCount = users.filter(user => !user.lastUsed).length;
+    if (neverLoggedInCount > 0) {
+      riskFactors.set('never-logged-in', {
+        count: neverLoggedInCount,
+        color: 'orange',
+        icon: User,
+        label: 'Never Logged In'
+      });
+    }
+
+    const noActivityCount = users.filter(user => user.lastUsed && isInactive(user.lastUsed)).length;
+    if (noActivityCount > 0) {
+      riskFactors.set('no-activity', {
+        count: noActivityCount,
+        color: 'yellow',
+        icon: AlertCircle,
+        label: 'No Activity'
+      });
+    }
+
+    const adminAccessCount = users.filter(user => 
+      user.provider === 'google' ? (user as GoogleUser).isAdmin : false
+    ).length;
+    if (adminAccessCount > 0) {
+      riskFactors.set('admin-access', {
+        count: adminAccessCount,
+        color: 'purple',
+        icon: Shield,
+        label: 'Admin Access'
+      });
+    }
+
+    const suspendedCount = users.filter(user => 
+      user.provider === 'google' && (user as GoogleUser).riskAssessment?.factors?.some(factor => 
+        factor.includes('suspended')
+      )
+    ).length;
+    if (suspendedCount > 0) {
+      riskFactors.set('suspended', {
+        count: suspendedCount,
+        color: 'gray',
+        icon: AlertCircle,
+        label: 'Suspended'
+      });
+    }
+
+    const highRiskCount = allEntities.filter(entity => 
+      entity.riskAssessment?.riskLevel === 'high' || entity.riskAssessment?.riskLevel === 'critical'
+    ).length;
+    if (highRiskCount > 0) {
+      riskFactors.set('high-risk', {
+        count: highRiskCount,
+        color: 'red',
+        icon: AlertTriangle,
+        label: 'High Risk'
+      });
+    }
+
+    // Extract dynamic risk factors from risk assessment factors
+    const allEntitiesWithRiskFactors = [...users, ...roles].filter(entity => 
+      entity.riskAssessment?.factors && entity.riskAssessment.factors.length > 0
+    );
+
+    allEntitiesWithRiskFactors.forEach(entity => {
+      entity.riskAssessment?.factors?.forEach(factor => {
+        // Clean up the factor text for better display
+        const cleanFactor = factor.toLowerCase().trim();
+        
+        // Skip if it's already covered by hardcoded factors
+        if (cleanFactor.includes('mfa') || cleanFactor.includes('2sv') || 
+            cleanFactor.includes('never logged') || cleanFactor.includes('suspended') ||
+            cleanFactor.includes('admin') || cleanFactor.includes('inactive')) {
+          return;
+        }
+
+        // Create a key for the factor
+        const factorKey = cleanFactor.replace(/[^a-z0-9]/g, '-');
+        
+        if (!riskFactors.has(factorKey)) {
+          // Count how many entities have this factor
+          const factorCount = allEntitiesWithRiskFactors.filter(e => 
+            e.riskAssessment?.factors?.some(f => 
+              f.toLowerCase().trim().replace(/[^a-z0-9]/g, '-') === factorKey
+            )
+          ).length;
+
+          if (factorCount > 0) {
+            riskFactors.set(factorKey, {
+              count: factorCount,
+              color: 'blue', // Default color for dynamic factors
+              icon: AlertTriangle,
+              label: factor.charAt(0).toUpperCase() + factor.slice(1) // Capitalize first letter
+            });
+          }
+        }
+      });
+    });
+
+    return riskFactors;
+  };
+
   // Handle sort click
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -506,6 +622,13 @@ export default function Permissions() {
           case 'high-risk':
             return entity.riskAssessment?.riskLevel === 'high' || entity.riskAssessment?.riskLevel === 'critical';
           default:
+            // Handle dynamic risk factors
+            if (riskFactorFilter.startsWith('dynamic-')) {
+              const factorKey = riskFactorFilter.replace('dynamic-', '');
+              return entity.riskAssessment?.factors?.some(factor => 
+                factor.toLowerCase().trim().replace(/[^a-z0-9]/g, '-') === factorKey
+              ) || false;
+            }
             return true;
         }
       });
@@ -750,127 +873,43 @@ export default function Permissions() {
               <span className="text-sm font-medium text-gray-300">Quick Risk Factor Filters</span>
             </div>
             <div className="flex flex-wrap gap-2">
-              {/* No MFA */}
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setTypeFilter('user');
-                  setRiskFilter('all');
-                  setProviderFilter('all');
-                  setRiskFactorFilter(riskFactorFilter === 'no-mfa' ? null : 'no-mfa');
-                }}
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  riskFactorFilter === 'no-mfa'
-                    ? 'bg-red-900/50 border border-red-500/50 text-red-200'
-                    : 'bg-red-900/30 border border-red-500/30 text-red-300 hover:bg-red-900/50 hover:border-red-500/50'
-                }`}
-              >
-                <Lock className="w-3 h-3" />
-                No MFA ({users.filter(user => !user.hasMFA).length})
-              </button>
+              {Array.from(getAllRiskFactors().entries()).map(([key, factor]) => {
+                const isActive = riskFactorFilter === key || riskFactorFilter === `dynamic-${key}`;
+                const isDynamic = !['no-mfa', 'never-logged-in', 'no-activity', 'admin-access', 'suspended', 'high-risk'].includes(key);
+                const filterKey = isDynamic ? `dynamic-${key}` : key;
+                
+                // Get color classes based on factor color
+                const getColorClasses = (color: string, isActive: boolean) => {
+                  const colorMap = {
+                    red: isActive ? 'bg-red-900/50 border border-red-500/50 text-red-200' : 'bg-red-900/30 border border-red-500/30 text-red-300 hover:bg-red-900/50 hover:border-red-500/50',
+                    orange: isActive ? 'bg-orange-900/50 border border-orange-500/50 text-orange-200' : 'bg-orange-900/30 border border-orange-500/30 text-orange-300 hover:bg-orange-900/50 hover:border-orange-500/50',
+                    yellow: isActive ? 'bg-yellow-900/50 border border-yellow-500/50 text-yellow-200' : 'bg-yellow-900/30 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-900/50 hover:border-yellow-500/50',
+                    purple: isActive ? 'bg-purple-900/50 border border-purple-500/50 text-purple-200' : 'bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500/50',
+                    gray: isActive ? 'bg-gray-900/50 border border-gray-500/50 text-gray-200' : 'bg-gray-900/30 border border-gray-500/30 text-gray-300 hover:bg-gray-900/50 hover:border-gray-500/50',
+                    blue: isActive ? 'bg-blue-900/50 border border-blue-500/50 text-blue-200' : 'bg-blue-900/30 border border-blue-500/30 text-blue-300 hover:bg-blue-900/50 hover:border-blue-500/50'
+                  };
+                  return colorMap[color as keyof typeof colorMap] || colorMap.blue;
+                };
 
-              {/* Never Logged In */}
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setTypeFilter('user');
-                  setRiskFilter('all');
-                  setProviderFilter('all');
-                  setRiskFactorFilter(riskFactorFilter === 'never-logged-in' ? null : 'never-logged-in');
-                }}
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  riskFactorFilter === 'never-logged-in'
-                    ? 'bg-orange-900/50 border border-orange-500/50 text-orange-200'
-                    : 'bg-orange-900/30 border border-orange-500/30 text-orange-300 hover:bg-orange-900/50 hover:border-orange-500/50'
-                }`}
-              >
-                <User className="w-3 h-3" />
-                Never Logged In ({users.filter(user => !user.lastUsed).length})
-              </button>
+                const IconComponent = factor.icon;
 
-              {/* No Activity */}
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setTypeFilter('user');
-                  setRiskFilter('all');
-                  setProviderFilter('all');
-                  setRiskFactorFilter(riskFactorFilter === 'no-activity' ? null : 'no-activity');
-                }}
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  riskFactorFilter === 'no-activity'
-                    ? 'bg-yellow-900/50 border border-yellow-500/50 text-yellow-200'
-                    : 'bg-yellow-900/30 border border-yellow-500/30 text-yellow-300 hover:bg-yellow-900/50 hover:border-yellow-500/50'
-                }`}
-              >
-                <AlertCircle className="w-3 h-3" />
-                No Activity ({users.filter(user => user.lastUsed && isInactive(user.lastUsed)).length})
-              </button>
-
-              {/* Admin Access */}
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setTypeFilter('user');
-                  setRiskFilter('all');
-                  setProviderFilter('google');
-                  setRiskFactorFilter(riskFactorFilter === 'admin-access' ? null : 'admin-access');
-                }}
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  riskFactorFilter === 'admin-access'
-                    ? 'bg-purple-900/50 border border-purple-500/50 text-purple-200'
-                    : 'bg-purple-900/30 border border-purple-500/30 text-purple-300 hover:bg-purple-900/50 hover:border-purple-500/50'
-                }`}
-              >
-                <Shield className="w-3 h-3" />
-                Admin Access ({users.filter(user => 
-                  user.provider === 'google' ? (user as GoogleUser).isAdmin : false
-                ).length})
-              </button>
-
-              {/* Suspended Users */}
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setTypeFilter('user');
-                  setRiskFilter('all');
-                  setProviderFilter('google');
-                  setRiskFactorFilter(riskFactorFilter === 'suspended' ? null : 'suspended');
-                }}
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  riskFactorFilter === 'suspended'
-                    ? 'bg-gray-900/50 border border-gray-500/50 text-gray-200'
-                    : 'bg-gray-900/30 border border-gray-500/30 text-gray-300 hover:bg-gray-900/50 hover:border-gray-500/50'
-                }`}
-              >
-                <AlertCircle className="w-3 h-3" />
-                Suspended ({users.filter(user => 
-                  user.provider === 'google' && (user as GoogleUser).riskAssessment?.factors?.some(factor => 
-                    factor.includes('suspended')
-                  )
-                ).length})
-              </button>
-
-              {/* High Risk */}
-              <button
-                onClick={() => {
-                  setSearchQuery('');
-                  setTypeFilter('all');
-                  setRiskFilter('all');
-                  setProviderFilter('all');
-                  setRiskFactorFilter(riskFactorFilter === 'high-risk' ? null : 'high-risk');
-                }}
-                className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                  riskFactorFilter === 'high-risk'
-                    ? 'bg-red-900/50 border border-red-500/50 text-red-200'
-                    : 'bg-red-900/30 border border-red-500/30 text-red-300 hover:bg-red-900/50 hover:border-red-500/50'
-                }`}
-              >
-                <AlertTriangle className="w-3 h-3" />
-                High Risk ({allEntities.filter(entity => 
-                  entity.riskAssessment?.riskLevel === 'high' || entity.riskAssessment?.riskLevel === 'critical'
-                ).length})
-              </button>
+                return (
+                  <button
+                    key={key}
+                    onClick={() => {
+                      setSearchQuery('');
+                      setTypeFilter('all');
+                      setRiskFilter('all');
+                      setProviderFilter('all');
+                      setRiskFactorFilter(isActive ? null : filterKey);
+                    }}
+                    className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-colors ${getColorClasses(factor.color, isActive)}`}
+                  >
+                    <IconComponent className="w-3 h-3" />
+                    {factor.label} ({factor.count})
+                  </button>
+                );
+              })}
 
               {/* Clear Filters */}
               <button
