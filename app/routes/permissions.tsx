@@ -767,88 +767,195 @@ export default function Permissions() {
   const generatePDF = () => {
     const doc = new jsPDF();
 
-    // Add header
-    doc.setFontSize(16);
-    doc.text('Identity Entities Report', 15, 20);
-    doc.setFontSize(12);
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, 15, 30);
-    doc.text(`Total Entities: ${allEntities.length}`, 15, 35);
-
-    // Prepare table data
-    const columns = ['Name', 'Type', 'Provider', 'Created', 'Last Used', 'MFA', 'Risk Level', 'Risk Factors'];
-    const data = allEntities.map(entity => {
-      const riskFactors = entity.riskAssessment?.factors || [];
-      const riskFactorText = riskFactors.length > 0 
-        ? riskFactors.slice(0, 3).join(', ') + (riskFactors.length > 3 ? '...' : '')
-        : 'None';
+    // Add Shadlo logo at the top
+    const logoUrl = '/pdf-logo.png';
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = logoUrl;
+    
+    // Wait for image to load, then add to PDF
+    img.onload = () => {
+      // Add logo (scaled to fit - smaller and square)
+      const logoSize = 25; // Square dimensions
+      doc.addImage(img, 'PNG', 15, 10, logoSize, logoSize);
       
-      return [
-        entity.type === 'user' ? getUserDisplayName(entity as IAMUser | GoogleUser) : (entity as IAMRole).roleName,
-        entity.type,
-        entity.provider === 'aws' ? 'AWS' : entity.provider === 'google' ? 'Google' : 'Unknown',
-        formatDate(entity.createDate),
-        formatDate(entity.lastUsed),
-        entity.type === 'user' && (entity as IAMUser).hasMFA ? 'Enabled' : 'Disabled',
-        getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low').label,
-        riskFactorText
-      ];
-    });
+      // Add header text next to logo
+      doc.setFontSize(16);
+      doc.text('Identity Entities Report', 45, 22); // Positioned next to logo
+      doc.setFontSize(12);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 15, 40);
+      doc.text(`Total Entities: ${allEntities.length}`, 15, 45);
 
-    // Generate table
-    autoTable(doc, {
-      head: [columns],
-      body: data,
-      startY: 45,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [41, 128, 185],
-        textColor: [255, 255, 255],
-        fontSize: 10,
-        fontStyle: 'bold'
-      },
-      bodyStyles: {
-        fontSize: 9
-      },
-      styles: {
-        cellWidth: 'auto'
-      },
-      columnStyles: {
-        0: { cellWidth: 35 },
-        1: { cellWidth: 15 },
-        2: { cellWidth: 20 },
-        3: { cellWidth: 25 },
-        4: { cellWidth: 25 },
-        5: { cellWidth: 15 },
-        6: { cellWidth: 20 },
-        7: { cellWidth: 30 }
-      },
-      alternateRowStyles: {
-        fillColor: [248, 249, 250]
-      },
-      margin: { top: 45 }
-    });
-
-    // Add risk factors summary
-    const riskFactorsSummary = getAllRiskFactors();
-    if (riskFactorsSummary.size > 0) {
-      const currentY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setFontSize(14);
-      doc.text('Risk Factors Summary', 15, currentY);
-      
-      let yPos = currentY + 10;
-      riskFactorsSummary.forEach((factor, key) => {
-        if (yPos > 250) {
-          doc.addPage();
-          yPos = 20;
-        }
-        doc.setFontSize(10);
-        doc.text(`${factor.label}: ${factor.count} entities`, 15, yPos);
-        yPos += 5;
+      // Prepare table data
+      const columns = ['Name', 'Type', 'Provider', 'Created', 'Last Used', 'MFA', 'Risk Level', 'Risk Factors'];
+      const data = allEntities.map(entity => {
+        const riskFactors = entity.riskAssessment?.factors || [];
+        const riskFactorText = riskFactors.length > 0 
+          ? riskFactors.slice(0, 3).join(', ') + (riskFactors.length > 3 ? '...' : '')
+          : 'None';
+        
+        return [
+          entity.type === 'user' ? getUserDisplayName(entity as IAMUser | GoogleUser) : (entity as IAMRole).roleName,
+          entity.type,
+          entity.provider === 'aws' ? 'AWS' : entity.provider === 'google' ? 'Google' : 'Unknown',
+          formatDate(entity.createDate),
+          formatDate(entity.lastUsed),
+          entity.type === 'user' && (entity as IAMUser).hasMFA ? 'Enabled' : 'Disabled',
+          getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low').label,
+          riskFactorText
+        ];
       });
-    }
 
-    // Save the PDF
-    doc.save('identity_entities_report.pdf');
+      // Generate table
+      autoTable(doc, {
+        head: [columns],
+        body: data,
+        startY: 65,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold'
+        },
+        bodyStyles: {
+          fontSize: 9
+        },
+        styles: {
+          cellWidth: 'auto'
+        },
+        columnStyles: {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 15 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 25 },
+          5: { cellWidth: 15 },
+          6: { cellWidth: 20 },
+          7: { cellWidth: 30 }
+        },
+        alternateRowStyles: {
+          fillColor: [248, 249, 250]
+        },
+        margin: { top: 65 }
+      });
+
+      // Add risk factors summary
+      const riskFactorsSummary = getAllRiskFactors();
+      if (riskFactorsSummary.size > 0) {
+        const currentY = (doc as any).lastAutoTable.finalY + 10;
+        doc.setFontSize(14);
+        doc.text('Risk Factors Summary', 15, currentY);
+        
+        let yPos = currentY + 10;
+        riskFactorsSummary.forEach((factor, key) => {
+          if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+          }
+          doc.setFontSize(10);
+          doc.text(`${factor.label}: ${factor.count} entities`, 15, yPos);
+          yPos += 5;
+        });
+      }
+
+      // Save the PDF
+      const today = new Date();
+      const day = String(today.getDate()).padStart(2, '0');
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const year = today.getFullYear();
+      const filename = `shadlo-report-${day}-${month}-${year}.pdf`;
+      doc.save(filename);
+    };
+
+    // Handle image load error
+    img.onerror = () => {
+      console.warn('Could not load logo, generating PDF without logo');
+      // Fallback: generate PDF without logo
+      doc.setFontSize(16);
+      doc.text('Identity Entities Report', 15, 20);
+      doc.setFontSize(12);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 15, 30);
+      doc.text(`Total Entities: ${allEntities.length}`, 15, 35);
+
+      // Continue with table generation...
+      const columns = ['Name', 'Type', 'Provider', 'Created', 'Last Used', 'MFA', 'Risk Level', 'Risk Factors'];
+      const data = allEntities.map(entity => {
+        const riskFactors = entity.riskAssessment?.factors || [];
+        const riskFactorText = riskFactors.length > 0 
+          ? riskFactors.slice(0, 3).join(', ') + (riskFactors.length > 3 ? '...' : '')
+          : 'None';
+        
+        return [
+          entity.type === 'user' ? getUserDisplayName(entity as IAMUser | GoogleUser) : (entity as IAMRole).roleName,
+          entity.type,
+          entity.provider === 'aws' ? 'AWS' : entity.provider === 'google' ? 'Google' : 'Unknown',
+          formatDate(entity.createDate),
+          formatDate(entity.lastUsed),
+          entity.type === 'user' && (entity as IAMUser).hasMFA ? 'Enabled' : 'Disabled',
+          getRiskLevelInfo(entity?.riskAssessment?.riskLevel || 'low').label,
+          riskFactorText
+        ];
+      });
+
+      autoTable(doc, {
+        head: [columns],
+        body: data,
+        startY: 45,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold'
+        },
+        bodyStyles: {
+          fontSize: 9
+        },
+        styles: {
+          cellWidth: 'auto'
+        },
+        columnStyles: {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 15 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 25 },
+          4: { cellWidth: 25 },
+          5: { cellWidth: 15 },
+          6: { cellWidth: 20 },
+          7: { cellWidth: 30 }
+        },
+        alternateRowStyles: {
+          fillColor: [248, 249, 250]
+        },
+        margin: { top: 45 }
+      });
+
+      const riskFactorsSummary = getAllRiskFactors();
+      if (riskFactorsSummary.size > 0) {
+        const currentY = (doc as any).lastAutoTable.finalY + 10;
+        doc.setFontSize(14);
+        doc.text('Risk Factors Summary', 15, currentY);
+        
+        let yPos = currentY + 10;
+        riskFactorsSummary.forEach((factor, key) => {
+          if (yPos > 250) {
+            doc.addPage();
+            yPos = 20;
+          }
+          doc.setFontSize(10);
+          doc.text(`${factor.label}: ${factor.count} entities`, 15, yPos);
+          yPos += 5;
+        });
+      }
+
+      const today = new Date();
+      const day = String(today.getDate()).padStart(2, '0');
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const year = today.getFullYear();
+      const filename = `shadlo-report-${day}-${month}-${year}.pdf`;
+      doc.save(filename);
+    };
   };
 
   return (
