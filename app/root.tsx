@@ -18,6 +18,9 @@ import {
   where, 
   getDocs 
 } from "firebase/firestore";
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { queryClient } from '~/lib/query-client';
 
 import "./tailwind.css";
 import AppSidebar from "~/components/AppSidebar";
@@ -139,16 +142,19 @@ export default function App() {
         <Links />
       </head>
       <body className="h-full">
-        {isSignInPage || isNotFoundPage ? (
-          <Outlet />
-        ) : (
-          <div className="flex h-full">
-            <AppSidebar />
-            <main className="flex-1 overflow-y-auto">
-              <Outlet />
-            </main>
-          </div>
-        )}
+        <QueryClientProvider client={queryClient}>
+          {isSignInPage || isNotFoundPage ? (
+            <Outlet />
+          ) : (
+            <div className="flex h-full">
+              <AppSidebar />
+              <main className="flex-1 overflow-y-auto">
+                <Outlet />
+              </main>
+            </div>
+          )}
+          <ReactQueryDevtools initialIsOpen={false} />
+        </QueryClientProvider>
         <ScrollRestoration />
         <Scripts />
       </body>

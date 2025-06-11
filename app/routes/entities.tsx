@@ -1,14 +1,11 @@
 import React from "react";
-import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Settings, Cloud, Mail, ChevronUp, Clock, Ban, Crown, Activity, Download, FileText, Users } from "lucide-react";
-import { useLoaderData, Link } from "@remix-run/react";
-import { json } from "@remix-run/node";
-import type { LoaderFunction } from "@remix-run/node";
+import { AlertTriangle, Key, User, Shield, ExternalLink, Lock, AlertCircle, AlertOctagon, Search, Filter, ArrowUp, ArrowDown, ChevronDown, ChevronRight, Settings, Cloud, Mail, ChevronUp, Clock, Ban, Crown, Activity, Download, FileText, Users, RefreshCw } from "lucide-react";
 import { useState, useMemo } from "react";
-import { getGoogleCredentials } from "~/utils/session.google.server";
+import { useEntities } from "~/hooks/useEntities";
 import { calculateRiskScore } from "~/lib/iam/google-risk-assessment";
-import { validateGoogleCredentials } from "~/utils/google-credentials.server";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { LoadingSpinner } from "~/components/LoadingSpinner";
 
 interface Policy {
   name: string;
@@ -131,7 +128,7 @@ interface IAMRole {
   };
 }
 
-interface LoaderData {
+export interface LoaderData {
   users: (IAMUser | GoogleUser)[];
   roles: IAMRole[];
   error: string | null;
@@ -143,175 +140,6 @@ interface LoaderData {
   hasGoogleRefreshToken?: boolean;
   refreshTokenValid?: boolean;
 }
-
-export const loader: LoaderFunction = async ({ request }) => {
-  try {
-    // Get the base URL from the request
-    const url = new URL(request.url);
-    const baseUrl = `${url.protocol}//${url.host}`;
-    
-    // Get the cookie header from the original request
-    const cookieHeader = request.headers.get("Cookie");
-    
-    // Initialize empty data
-    let awsData = { users: [], roles: [], credentials: null, error: null };
-    let googleUsers: GoogleUser[] = [];
-    let googleCredentialsValid = false;
-    
-    // Try to fetch AWS data
-    try {
-      const awsResponse = await fetch(`${baseUrl}/api/iam-entities`, {
-        headers: {
-          Cookie: cookieHeader || "",
-        },
-      });
-      
-      if (awsResponse.ok) {
-        awsData = await awsResponse.json();
-      } else {
-      }
-    } catch (error) {
-      // Continue without AWS data
-    }
-
-    // Check if user has Google refresh token in database and validate it
-    const { getCurrentUser, getGoogleRefreshToken } = await import("~/lib/firebase");
-    const currentUser = await getCurrentUser();
-    let hasGoogleRefreshToken = false;
-    let refreshTokenValid = false;
-    
-    if (currentUser?.email) {
-      const refreshToken = await getGoogleRefreshToken(currentUser.email);
-      hasGoogleRefreshToken = !!refreshToken;
-      
-      // If we have a refresh token, test if it's still valid
-      if (hasGoogleRefreshToken) {
-        try {
-          const { google } = await import('googleapis');
-          const clientId = process.env.GOOGLE_CLIENT_ID;
-          const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-          const redirectUri = process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000";
-
-          if (clientId && clientSecret) {
-            const oauth2Client = new google.auth.OAuth2(
-              clientId,
-              clientSecret,
-              redirectUri
-            );
-
-            oauth2Client.setCredentials({
-              refresh_token: refreshToken
-            });
-
-            // Try to refresh the access token to validate the refresh token
-            const tokenResponse = await oauth2Client.refreshAccessToken();
-            refreshTokenValid = !!tokenResponse.credentials.access_token;
-          }
-        } catch (error) {
-          // Refresh token is invalid or expired
-          refreshTokenValid = false;
-        }
-      }
-    }
-
-    // Validate Google credentials before attempting to fetch data
-    const googleValidation = await validateGoogleCredentials(request);
-    googleCredentialsValid = googleValidation.isValid;
-    
-
-    // Try to fetch Google data using auto-fetch if user has valid refresh token, otherwise use session credentials
-    if (refreshTokenValid || googleValidation.isValid) {
-      try {
-        const googleResponse = await fetch(
-          refreshTokenValid 
-            ? `${baseUrl}/api/google-users-auto`
-            : `${baseUrl}/api/google-users`,
-          {
-            headers: {
-              Cookie: cookieHeader || "",
-            },
-          }
-        );
-        
-        if (googleResponse.ok) {
-          const googleData = await googleResponse.json();
-
-          
-          // Transform Google users to match the common interface
-          googleUsers = googleData.users?.map((user: GoogleApiUser) => {
-            const riskAssessment = calculateRiskScore({
-              lastLoginTime: user.lastLoginTime || null,
-              suspended: user.suspended || false,
-              isAdmin: user.isAdmin || false,
-              isDelegatedAdmin: user.isDelegatedAdmin || false,
-              changePasswordAtNextLogin: user.changePasswordAtNextLogin || false,
-              isMailboxSetup: user.isMailboxSetup || false,
-              isEnrolledIn2Sv: user.isEnrolledIn2Sv || false
-            });
-
-            return {
-              ...user,
-              provider: 'google' as const,
-              type: 'user' as const,
-              createDate: new Date().toISOString(), // Google API doesn't provide creation date
-              lastUsed: user.lastLoginTime || undefined,
-              policies: [], // Google API doesn't provide policies in the same way
-              hasMFA: user.isEnrolledIn2Sv,
-              suspended: user.suspended || false,
-              riskAssessment: {
-                riskLevel: riskAssessment.level.toLowerCase() as 'low' | 'medium' | 'high' | 'critical',
-                score: riskAssessment.score,
-                lastUsedScore: user.lastLoginTime ? 0 : 3, // Add points for never logged in
-                permissionScore: user.isAdmin ? 2 : 0, // Add points for admin access
-                identityScore: user.isEnrolledIn2Sv ? 0 : 1, // Add points for no 2SV
-                factors: riskAssessment.factors,
-                shadowPermissions: [] // Google doesn't have shadow permissions concept
-              }
-            };
-          }) || [];
-          
-          // Update credentials valid status based on successful fetch
-          googleCredentialsValid = true;
-        } else {
-          const errorText = await googleResponse.text();
-          googleCredentialsValid = false; // Mark as invalid if API call fails
-        }
-      } catch (error) {
-        googleCredentialsValid = false; // Mark as invalid if fetch fails
-      }
-    } else {
-    }
-    
-    
-    // Combine AWS and Google users
-    const allUsers = [
-      ...(awsData.users || []),
-      ...googleUsers
-    ];
-    
-    // Return the combined data with Google credentials status
-    return json<LoaderData>({ 
-      users: allUsers,
-      roles: awsData.roles || [],
-      credentials: awsData.credentials || null,
-      error: awsData.error || null,
-      googleCredentialsValid,
-      hasGoogleRefreshToken,
-      refreshTokenValid
-    });
-  } catch (error) {
-    console.error("Error in loader:", error);
-    return json<LoaderData>(
-      { 
-        users: [], 
-        roles: [], 
-        credentials: null,
-        error: error instanceof Error ? error.message : "Failed to fetch IAM data",
-        googleCredentialsValid: false
-      }
-    );
-  }
-};
 
 // Helper function to get user display name
 const getUserDisplayName = (user: IAMUser | GoogleUser): string => {
@@ -444,7 +272,18 @@ type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' |
 type SortDirection = 'asc' | 'desc';
 
 export default function Entities() {
-  const { users, roles, error, credentials, googleCredentialsValid, hasGoogleRefreshToken, refreshTokenValid } = useLoaderData<LoaderData>();
+  // Use React Query instead of useLoaderData
+  const { data, isLoading, isError, error, refetch } = useEntities();
+  
+  // Extract data with fallbacks
+  const users = data?.users || [];
+  const roles = data?.roles || [];
+  const credentials = data?.credentials;
+  const googleCredentialsValid = data?.googleCredentialsValid || false;
+  const hasGoogleRefreshToken = data?.hasGoogleRefreshToken;
+  const refreshTokenValid = data?.refreshTokenValid;
+  const errorMessage = data?.error || error?.message;
+
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
@@ -1243,24 +1082,46 @@ export default function Entities() {
           <div className="bg-[#1a1f28] border border-[#23272f] rounded-lg overflow-hidden">
             <div className="px-5 py-4 border-b border-[#23272f] flex justify-between items-center">
               <h2 className="text-xl font-semibold text-white">
-                {hasConnectedProviders ? `Identity Entities (${allEntities.length} entities)` : 'No Providers Connected'}
+                {isLoading ? (
+                  <div className="flex items-center gap-2">
+                    <LoadingSpinner size="sm" />
+                    Loading entities...
+                  </div>
+                ) : hasConnectedProviders ? (
+                  `Identity Entities (${allEntities.length} entities)`
+                ) : (
+                  'No Providers Connected'
+                )}
               </h2>
               
-              {/* PDF Export Button */}
-              {hasConnectedProviders && (
+              <div className="flex items-center gap-2">
+                {/* Refresh Button */}
                 <button
-                  onClick={generatePDF}
-                  className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 border border-blue-500 rounded-lg text-sm font-medium text-white transition-colors"
-                  title="Export table data to PDF"
+                  onClick={() => refetch()}
+                  disabled={isLoading}
+                  className="inline-flex items-center gap-2 px-3 py-2 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 disabled:cursor-not-allowed border border-gray-500 rounded-lg text-sm font-medium text-white transition-colors"
+                  title="Refresh entities data"
                 >
-                  <FileText className="w-4 h-4" />
-                  Export PDF
+                  <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  Refresh
                 </button>
-              )}
+                
+                {/* PDF Export Button */}
+                {hasConnectedProviders && !isLoading && (
+                  <button
+                    onClick={generatePDF}
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 border border-blue-500 rounded-lg text-sm font-medium text-white transition-colors"
+                    title="Export table data to PDF"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Export PDF
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Only show table if we have connected providers */}
-            {hasConnectedProviders && (
+            {/* Show table if we have connected providers or are loading */}
+            {(hasConnectedProviders || isLoading) && (
               <div className="relative h-[calc(100vh-400px)] min-h-[500px]">
                 <div className="absolute inset-0 overflow-auto 
                   [&::-webkit-scrollbar]:w-2 
@@ -1321,12 +1182,18 @@ export default function Entities() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#23272f]">
-                      {error ? (
+                      {isLoading ? (
+                        <tr>
+                          <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                            <LoadingSpinner text="Loading entities..." />
+                          </td>
+                        </tr>
+                      ) : errorMessage ? (
                         <tr>
                           <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
                             <div className="flex flex-col items-center gap-2">
                               <AlertTriangle className="w-8 h-8 text-red-500" />
-                              <span>{error}</span>
+                              <span>{errorMessage}</span>
                             </div>
                           </td>
                         </tr>
