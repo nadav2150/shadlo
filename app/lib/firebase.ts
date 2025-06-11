@@ -240,6 +240,166 @@ export async function removeGoogleRefreshToken(email: string): Promise<void> {
   }
 }
 
+// Function to save AWS credentials to client's Firestore document
+export async function saveAwsCredentials(
+  email: string, 
+  accessKeyId: string, 
+  secretAccessKey: string, 
+  region: string
+): Promise<void> {
+  try {
+    // Check if user exists in clients collection
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      // User exists, update their AWS credentials
+      const userDoc = querySnapshot.docs[0];
+      await updateDoc(doc(db, "clients", userDoc.id), {
+        awsAccessKeyId: accessKeyId,
+        awsSecretAccessKey: secretAccessKey,
+        awsRegion: region,
+        awsCredentialsUpdatedAt: serverTimestamp(),
+        awsProviderConnected: true,
+        awsProviderConnectedAt: serverTimestamp()
+      });
+    } else {
+      // User doesn't exist, create new document with AWS credentials
+      const clientData = {
+        email: email,
+        awsAccessKeyId: accessKeyId,
+        awsSecretAccessKey: secretAccessKey,
+        awsRegion: region,
+        awsCredentialsUpdatedAt: serverTimestamp(),
+        awsProviderConnected: true,
+        awsProviderConnectedAt: serverTimestamp(),
+        lastSignInAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        // Default email notification settings
+        emailNotificationsEnabled: true,
+        reportFrequency: "weekly",
+        reportEmailAddress: email,
+        companyName: "",
+        lastSettingsUpdate: serverTimestamp(),
+        sendOnEmailDate: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)) // 7 days from now
+      };
+
+      const docRef = await addDoc(collection(db, "clients"), clientData);
+    }
+  } catch (error) {
+    console.error("Error saving AWS credentials to Firestore:", error);
+    throw error;
+  }
+}
+
+// Function to get AWS credentials from client's Firestore document
+export async function getAwsCredentials(email: string): Promise<{
+  accessKeyId: string | null;
+  secretAccessKey: string | null;
+  region: string | null;
+  isConnected: boolean;
+} | null> {
+  try {
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const userDoc = querySnapshot.docs[0].data();
+      return {
+        accessKeyId: userDoc.awsAccessKeyId || null,
+        secretAccessKey: userDoc.awsSecretAccessKey || null,
+        region: userDoc.awsRegion || null,
+        isConnected: userDoc.awsProviderConnected || false
+      };
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error getting AWS credentials from Firestore:", error);
+    return null;
+  }
+}
+
+// Function to check if user has AWS credentials and mark provider as connected
+export async function checkAndMarkAwsProviderConnected(email: string): Promise<{ 
+  hasCredentials: boolean; 
+  isConnected: boolean; 
+  credentials?: { accessKeyId: string; secretAccessKey: string; region: string; }
+}> {
+  try {
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data();
+      
+      // Check if user has AWS credentials
+      const hasCredentials = !!(userData.awsAccessKeyId && userData.awsSecretAccessKey && userData.awsRegion);
+      
+      // If they have credentials but no connection status, mark as connected
+      if (hasCredentials && !userData.awsProviderConnected) {
+        await updateDoc(doc(db, "clients", userDoc.id), {
+          awsProviderConnected: true,
+          awsProviderConnectedAt: serverTimestamp()
+        });
+        
+        return { 
+          hasCredentials: true, 
+          isConnected: true,
+          credentials: {
+            accessKeyId: userData.awsAccessKeyId,
+            secretAccessKey: userData.awsSecretAccessKey,
+            region: userData.awsRegion
+          }
+        };
+      }
+      
+      return { 
+        hasCredentials, 
+        isConnected: userData.awsProviderConnected || false,
+        credentials: hasCredentials ? {
+          accessKeyId: userData.awsAccessKeyId,
+          secretAccessKey: userData.awsSecretAccessKey,
+          region: userData.awsRegion
+        } : undefined
+      };
+    }
+    
+    return { hasCredentials: false, isConnected: false };
+  } catch (error) {
+    console.error("Error checking AWS provider connection status:", error);
+    return { hasCredentials: false, isConnected: false };
+  }
+}
+
+// Function to remove AWS credentials from client's Firestore document
+export async function removeAwsCredentials(email: string): Promise<void> {
+  try {
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      // User exists, remove their AWS credentials and connection status
+      const userDoc = querySnapshot.docs[0];
+      await updateDoc(doc(db, "clients", userDoc.id), {
+        awsAccessKeyId: null,
+        awsSecretAccessKey: null,
+        awsRegion: null,
+        awsProviderConnected: false,
+        awsCredentialsUpdatedAt: null
+      });
+    }
+  } catch (error) {
+    console.error("Error removing AWS credentials from Firestore:", error);
+    throw error;
+  }
+}
+
 export { 
   auth, 
   signInWithEmailAndPassword, 

@@ -69,7 +69,7 @@ export function AwsCredentialsForm({ onSuccess, onCancel, initialCredentials, on
         <div className="p-4 bg-green-900/20 border border-green-500/20 rounded-lg">
           <div className="flex items-center gap-2 text-green-400">
             <CheckCircle className="w-5 h-5" />
-            <span>AWS credentials validated successfully!</span>
+            <span>AWS credentials saved successfully!</span>
           </div>
           {actionData.accountId && (
             <div className="mt-2 text-sm text-gray-300">
@@ -98,114 +98,119 @@ export function AwsCredentialsForm({ onSuccess, onCancel, initialCredentials, on
       {/* Form */}
       <Form method="post" className="space-y-6">
         <input type="hidden" name="provider" value="aws" />
-        <div>
-          <Label htmlFor="accessKeyId" className="text-gray-300">
-            AWS Access Key ID
-          </Label>
-          <Input
-            id="accessKeyId"
-            name="accessKeyId"
-            value={formData.accessKeyId}
-            onChange={(e) => setFormData({ ...formData, accessKeyId: e.target.value })}
-            disabled={!isEditing}
-            className={`mt-1 bg-[#23272f] border-[#2d333b] text-white ${
-              !isEditing ? "opacity-75 cursor-not-allowed" : ""
-            }`}
-            placeholder="Enter your AWS Access Key ID"
-            required
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="secretAccessKey" className="text-gray-300">
-            AWS Secret Access Key
-          </Label>
-          <Input
-            id="secretAccessKey"
-            name="secretAccessKey"
-            type="password"
-            value={formData.secretAccessKey}
-            onChange={(e) => setFormData({ ...formData, secretAccessKey: e.target.value })}
-            disabled={!isEditing}
-            className={`mt-1 bg-[#23272f] border-[#2d333b] text-white ${
-              !isEditing ? "opacity-75 cursor-not-allowed" : ""
-            }`}
-            placeholder={isEditing ? "Enter your AWS Secret Access Key" : "••••••••••••••••"}
-            required={!initialCredentials?.accessKeyId}
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="region" className="text-gray-300">
-            AWS Region
-          </Label>
-          <Input
-            id="region"
-            name="region"
-            value={formData.region}
-            onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-            disabled={!isEditing}
-            className={`mt-1 bg-[#23272f] border-[#2d333b] text-white ${
-              !isEditing ? "opacity-75 cursor-not-allowed" : ""
-            }`}
-            placeholder="Enter your AWS Region (e.g., us-east-1)"
-            required
-          />
-        </div>
-
-        {/* Form Actions */}
-        {!isEditing && (
-          <div className="flex justify-between items-center pt-4">
-            {/* Disconnect Button (shown when viewing existing credentials) */}
-            {initialCredentials?.accessKeyId && onDisconnect && (
-              <Form method="post">
-                <input type="hidden" name="intent" value="disconnect" />
+        
+        {!isEditing && initialCredentials?.accessKeyId ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-medium text-white">AWS Connected</h3>
+                <p className="text-sm text-gray-400">Credentials stored securely in database</p>
+              </div>
+              <div className="flex space-x-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditing(true)}
+                >
+                  <Edit2 className="w-4 h-4 mr-2" />
+                  Update Credentials
+                </Button>
                 <Button
                   type="submit"
-                  variant="ghost"
-                  className="text-red-500 hover:text-red-600 border border-red-500 hover:border-red-600"
-                  disabled={isSubmitting}
+                  variant="outline"
+                  size="sm"
+                  name="intent"
+                  value="disconnect"
+                  onClick={onDisconnect}
+                  className="text-red-500 hover:text-red-600 border-red-500 hover:border-red-600"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
                   Disconnect
                 </Button>
-              </Form>
-            )}
-            <Button
-              type="button"
-              onClick={() => setIsEditing(true)}
-              variant="outline"
-              className="text-blue-400 hover:text-blue-300 border-blue-400/50 hover:border-blue-300/50 hover:bg-blue-400/10"
-            >
-              <Edit2 className="w-4 h-4 mr-2" />
-              Edit Credentials
-            </Button>
+              </div>
+            </div>
           </div>
-        )}
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-lg font-medium text-white mb-2">Connect AWS Account</h3>
+              <p className="text-sm text-gray-400">
+                Enter your AWS credentials to connect your account
+              </p>
+            </div>
+            
+            <div>
+              <Label htmlFor="accessKeyId" className="text-gray-300">
+                AWS Access Key ID
+              </Label>
+              <Input
+                id="accessKeyId"
+                name="accessKeyId"
+                value={formData.accessKeyId}
+                onChange={(e) => setFormData({ ...formData, accessKeyId: e.target.value })}
+                className="mt-1 bg-[#23272f] border-[#2d333b] text-white"
+                placeholder="Enter your AWS Access Key ID"
+                required
+              />
+            </div>
 
-        {isEditing && (
-          <div className="flex justify-end space-x-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onCancel}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <span className="animate-spin mr-2">⟳</span>
-                  Validating...
-                </>
-              ) : (
-                initialCredentials?.accessKeyId ? "Update Credentials" : "Validate & Save"
+            <div>
+              <Label htmlFor="secretAccessKey" className="text-gray-300">
+                AWS Secret Access Key
+              </Label>
+              <Input
+                id="secretAccessKey"
+                name="secretAccessKey"
+                type="password"
+                value={formData.secretAccessKey}
+                onChange={(e) => setFormData({ ...formData, secretAccessKey: e.target.value })}
+                className="mt-1 bg-[#23272f] border-[#2d333b] text-white"
+                placeholder="Enter your AWS Secret Access Key"
+                required
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="region" className="text-gray-300">
+                AWS Region
+              </Label>
+              <Input
+                id="region"
+                name="region"
+                value={formData.region}
+                onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+                className="mt-1 bg-[#23272f] border-[#2d333b] text-white"
+                placeholder="Enter your AWS Region (e.g., us-east-1)"
+                required
+              />
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4">
+              {isEditing && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsEditing(false)}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
               )}
-            </Button>
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <span className="animate-spin mr-2">⟳</span>
+                    Validating...
+                  </>
+                ) : (
+                  initialCredentials?.accessKeyId ? "Update Credentials" : "Validate & Save"
+                )}
+              </Button>
+            </div>
           </div>
         )}
       </Form>
@@ -224,6 +229,9 @@ export function AwsCredentialsForm({ onSuccess, onCancel, initialCredentials, on
               <li>Save your Access Key ID and Secret Access Key</li>
               <li>For Region, use the region code from the top right of your AWS Console (e.g., us-east-1)</li>
             </ol>
+            <p className="mt-2 text-xs text-gray-400">
+              Your credentials are stored securely in our database and encrypted at rest.
+            </p>
           </div>
         </div>
       </div>

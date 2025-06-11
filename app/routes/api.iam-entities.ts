@@ -2,14 +2,26 @@ import { json } from "@remix-run/node";
 import { IAMClient } from "@aws-sdk/client-iam";
 import { getIAMUsers, getIAMRoles } from "~/lib/iam/aws-operations";
 import { calculateRiskScore } from "~/lib/iam/risk-assessment";
-import { getAwsCredentials } from "~/utils/session.server";
+import { getCurrentUser, getAwsCredentials } from "~/lib/firebase";
 
 export async function loader({ request }: { request: Request }) {
   try {
-    // Get AWS credentials from session
-    const credentials = await getAwsCredentials(request);
-    
-    if (!credentials) {
+    // Get current user
+    const currentUser = await getCurrentUser();
+    if (!currentUser?.email) {
+      return json({ 
+        status: "error",
+        message: "User not authenticated",
+        redirectTo: "/sign-in",
+        credentials: null,
+        users: [],
+        roles: []
+      }, { status: 401 });
+    }
+
+    // Get AWS credentials from database
+    const awsCredentialsData = await getAwsCredentials(currentUser.email);
+    if (!awsCredentialsData || !awsCredentialsData.accessKeyId || !awsCredentialsData.secretAccessKey || !awsCredentialsData.region) {
       return json({ 
         status: "error",
         message: "AWS credentials not found. Please add your credentials in the Settings page.",
@@ -20,12 +32,12 @@ export async function loader({ request }: { request: Request }) {
       }, { status: 401 });
     }
 
-    // Initialize AWS IAM client with session credentials
+    // Initialize AWS IAM client with database credentials
     const iamClient = new IAMClient({
-      region: credentials.region,
+      region: awsCredentialsData.region,
       credentials: {
-        accessKeyId: credentials.accessKeyId,
-        secretAccessKey: credentials.secretAccessKey,
+        accessKeyId: awsCredentialsData.accessKeyId,
+        secretAccessKey: awsCredentialsData.secretAccessKey,
       },
     });
 
@@ -60,8 +72,8 @@ export async function loader({ request }: { request: Request }) {
       users: usersWithRiskAssessment,
       roles: rolesWithRiskAssessment,
       credentials: {
-        accessKeyId: credentials.accessKeyId,
-        region: credentials.region
+        accessKeyId: awsCredentialsData.accessKeyId,
+        region: awsCredentialsData.region
       }
     });
   } catch (error) {
@@ -75,4 +87,4 @@ export async function loader({ request }: { request: Request }) {
       roles: []
     }, { status: 500 });
   }
-} 
+}

@@ -1,14 +1,25 @@
 import { json } from "@remix-run/node";
 import type { LoaderFunction } from "@remix-run/node";
 import { IAMClient, GetUserCommand } from "@aws-sdk/client-iam";
-import { getAwsCredentials } from "~/utils/session.server";
+import { getCurrentUser, getAwsCredentials } from "~/lib/firebase";
 
 export const loader: LoaderFunction = async ({ request }) => {
   try {
-    // Get AWS credentials from session
-    const credentials = await getAwsCredentials(request);
+    // Get current user
+    const currentUser = await getCurrentUser();
     
-    if (!credentials) {
+    if (!currentUser?.email) {
+      return json({
+        status: "error",
+        message: "User not authenticated",
+        redirectTo: "/sign-in"
+      }, { status: 401 });
+    }
+
+    // Get AWS credentials from database
+    const awsCredentialsData = await getAwsCredentials(currentUser.email);
+    
+    if (!awsCredentialsData || !awsCredentialsData.accessKeyId || !awsCredentialsData.secretAccessKey || !awsCredentialsData.region) {
       return json({
         status: "error",
         message: "AWS credentials not found. Please add your credentials in the Settings page.",
@@ -16,12 +27,12 @@ export const loader: LoaderFunction = async ({ request }) => {
       }, { status: 401 });
     }
 
-    // Initialize the IAM client with session credentials
+    // Initialize the IAM client with database credentials
     const iamClient = new IAMClient({
-      region: credentials.region,
+      region: awsCredentialsData.region,
       credentials: {
-        accessKeyId: credentials.accessKeyId,
-        secretAccessKey: credentials.secretAccessKey,
+        accessKeyId: awsCredentialsData.accessKeyId,
+        secretAccessKey: awsCredentialsData.secretAccessKey,
       },
     });
 
@@ -35,7 +46,7 @@ export const loader: LoaderFunction = async ({ request }) => {
       details: {
         user: response.User?.UserName,
         arn: response.User?.Arn,
-        region: credentials.region
+        region: awsCredentialsData.region
       }
     });
   } catch (error: any) {

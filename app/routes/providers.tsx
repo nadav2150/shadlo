@@ -15,14 +15,12 @@ import {
 import { Button } from "~/components/ui";
 import { Modal } from "~/components/ui/modal";
 import { AwsCredentialsForm } from "~/components/AwsCredentialsForm";
-import { getAwsCredentials, setAwsCredentials, clearAwsCredentials } from "~/utils/session.server";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { GoogleOAuthProvider, useGoogleLogin } from '@react-oauth/google';
 import { getGoogleCredentials, clearGoogleCredentials, type GoogleCredentials } from "~/utils/session.google.server";
 import { validateGoogleCredentials } from "~/utils/google-credentials.server";
 
 export const loader: LoaderFunction = async ({ request }) => {
-  const awsCredentials = await getAwsCredentials(request);
   const googleCredentials = await getGoogleCredentials(request);
   
   // Validate Google credentials if they exist
@@ -33,12 +31,15 @@ export const loader: LoaderFunction = async ({ request }) => {
   }
   
   // Check if user has Google refresh token in database and validate it
-  const { getCurrentUser, getGoogleRefreshToken } = await import("~/lib/firebase");
+  const { getCurrentUser, getGoogleRefreshToken, checkAndMarkAwsProviderConnected } = await import("~/lib/firebase");
   const currentUser = await getCurrentUser();
   let hasGoogleRefreshToken = false;
   let refreshTokenValid = false;
+  let awsCredentials = null;
+  let awsConnected = false;
   
   if (currentUser?.email) {
+    // Check Google refresh token
     const refreshToken = await getGoogleRefreshToken(currentUser.email);
     hasGoogleRefreshToken = !!refreshToken;
     
@@ -70,6 +71,16 @@ export const loader: LoaderFunction = async ({ request }) => {
         refreshTokenValid = false;
       }
     }
+    
+    // Check AWS credentials from database
+    const awsStatus = await checkAndMarkAwsProviderConnected(currentUser.email);
+    awsConnected = awsStatus.isConnected;
+    if (awsStatus.credentials) {
+      awsCredentials = {
+        accessKeyId: awsStatus.credentials.accessKeyId,
+        region: awsStatus.credentials.region
+      };
+    }
   }
   
   return json({
@@ -80,11 +91,12 @@ export const loader: LoaderFunction = async ({ request }) => {
     googleCredentials: googleCredentialsValid ? googleCredentials : null,
     googleCredentialsValid,
     hasGoogleRefreshToken,
-    refreshTokenValid
+    refreshTokenValid,
+    awsConnected
   });
 };
 
-// Validation function
+// Validation function for AWS credentials
 async function validateAwsCredentials(accessKeyId: string, secretAccessKey: string, region: string) {
   try {
     const stsClient = new STSClient({
@@ -127,15 +139,26 @@ export const action: ActionFunction = async ({ request }) => {
   // Handle disconnect action
   if (intent === "disconnect") {
     if (provider === "aws") {
-      const cookieHeader = await clearAwsCredentials(request);
-      return json(
-        { success: true, message: "AWS credentials disconnected successfully" },
-        {
-          headers: cookieHeader ? {
-            "Set-Cookie": cookieHeader
-          } : undefined
+      try {
+        // Get current user to remove AWS credentials from database
+        const { getCurrentUser, removeAwsCredentials } = await import("~/lib/firebase");
+        const currentUser = await getCurrentUser();
+        
+        if (currentUser?.email) {
+          // Remove AWS credentials from database
+          await removeAwsCredentials(currentUser.email);
         }
-      );
+        
+        return json(
+          { success: true, message: "AWS provider disconnected successfully and credentials removed from database" }
+        );
+      } catch (error) {
+        console.error("Error disconnecting AWS provider:", error);
+        return json(
+          { error: "Failed to disconnect AWS provider" },
+          { status: 500 }
+        );
+      }
     } else if (provider === "google") {
       try {
         // Get current user to remove refresh token from database
@@ -185,6 +208,17 @@ export const action: ActionFunction = async ({ request }) => {
     }
 
     try {
+      // Get current user
+      const { getCurrentUser, saveAwsCredentials } = await import("~/lib/firebase");
+      const currentUser = await getCurrentUser();
+      
+      if (!currentUser?.email) {
+        return json(
+          { error: "User not authenticated" },
+          { status: 401 }
+        );
+      }
+
       const validationResult = await validateAwsCredentials(accessKeyId, secretAccessKey, region);
       if (!validationResult.isValid) {
         return json(
@@ -193,15 +227,8 @@ export const action: ActionFunction = async ({ request }) => {
         );
       }
 
-      const cookieHeader = await setAwsCredentials(request, {
-        accessKeyId,
-        secretAccessKey,
-        region,
-      });
-
-      if (!cookieHeader) {
-        throw new Error("Failed to save credentials to session");
-      }
+      // Save credentials to database
+      await saveAwsCredentials(currentUser.email, accessKeyId, secretAccessKey, region);
 
       return json(
         { 
@@ -209,17 +236,12 @@ export const action: ActionFunction = async ({ request }) => {
           accountId: validationResult.accountId,
           arn: validationResult.arn,
           userId: validationResult.userId
-        },
-        {
-          headers: {
-            "Set-Cookie": cookieHeader
-          }
         }
       );
     } catch (error) {
-      console.error("Error validating AWS credentials:", error);
+      console.error("Error saving AWS credentials:", error);
       return json(
-        { error: "Failed to validate credentials. Please try again." },
+        { error: "Failed to save AWS credentials. Please try again." },
         { status: 500 }
       );
     }
@@ -388,7 +410,7 @@ function ProviderCard({
 }
 
 export default function ProvidersPage() {
-  const { credentials, googleClientId, googleCredentials: initialGoogleCredentials, googleCredentialsValid, hasGoogleRefreshToken, refreshTokenValid } = useLoaderData<typeof loader>();
+  const { credentials, googleClientId, googleCredentials: initialGoogleCredentials, googleCredentialsValid, hasGoogleRefreshToken, refreshTokenValid, awsConnected } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "google">("aws");
