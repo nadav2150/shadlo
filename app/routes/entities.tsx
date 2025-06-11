@@ -140,6 +140,7 @@ interface LoaderData {
   } | null;
   googleCredentialsValid: boolean;
   hasGoogleRefreshToken?: boolean;
+  refreshTokenValid?: boolean;
 }
 
 export const loader: LoaderFunction = async ({ request }) => {
@@ -172,14 +173,44 @@ export const loader: LoaderFunction = async ({ request }) => {
       // Continue without AWS data
     }
 
-    // Check if user has Google refresh token in database
+    // Check if user has Google refresh token in database and validate it
     const { getCurrentUser, getGoogleRefreshToken } = await import("~/lib/firebase");
     const currentUser = await getCurrentUser();
     let hasGoogleRefreshToken = false;
+    let refreshTokenValid = false;
     
     if (currentUser?.email) {
       const refreshToken = await getGoogleRefreshToken(currentUser.email);
       hasGoogleRefreshToken = !!refreshToken;
+      
+      // If we have a refresh token, test if it's still valid
+      if (hasGoogleRefreshToken) {
+        try {
+          const { google } = await import('googleapis');
+          const clientId = process.env.GOOGLE_CLIENT_ID;
+          const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+          const redirectUri = process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000";
+
+          if (clientId && clientSecret) {
+            const oauth2Client = new google.auth.OAuth2(
+              clientId,
+              clientSecret,
+              redirectUri
+            );
+
+            oauth2Client.setCredentials({
+              refresh_token: refreshToken
+            });
+
+            // Try to refresh the access token to validate the refresh token
+            const tokenResponse = await oauth2Client.refreshAccessToken();
+            refreshTokenValid = !!tokenResponse.credentials.access_token;
+          }
+        } catch (error) {
+          // Refresh token is invalid or expired
+          refreshTokenValid = false;
+        }
+      }
     }
 
     // Validate Google credentials before attempting to fetch data
@@ -187,11 +218,11 @@ export const loader: LoaderFunction = async ({ request }) => {
     googleCredentialsValid = googleValidation.isValid;
     
 
-    // Try to fetch Google data using auto-fetch if user has refresh token, otherwise use session credentials
-    if (hasGoogleRefreshToken || googleValidation.isValid) {
+    // Try to fetch Google data using auto-fetch if user has valid refresh token, otherwise use session credentials
+    if (refreshTokenValid || googleValidation.isValid) {
       try {
         const googleResponse = await fetch(
-          hasGoogleRefreshToken 
+          refreshTokenValid 
             ? `${baseUrl}/api/google-users-auto`
             : `${baseUrl}/api/google-users`,
           {
@@ -263,7 +294,8 @@ export const loader: LoaderFunction = async ({ request }) => {
       credentials: awsData.credentials || null,
       error: awsData.error || null,
       googleCredentialsValid,
-      hasGoogleRefreshToken
+      hasGoogleRefreshToken,
+      refreshTokenValid
     });
   } catch (error) {
     console.error("Error in loader:", error);
@@ -410,7 +442,7 @@ type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' |
 type SortDirection = 'asc' | 'desc';
 
 export default function Entities() {
-  const { users, roles, error, credentials, googleCredentialsValid, hasGoogleRefreshToken } = useLoaderData<LoaderData>();
+  const { users, roles, error, credentials, googleCredentialsValid, hasGoogleRefreshToken, refreshTokenValid } = useLoaderData<LoaderData>();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
@@ -1197,7 +1229,7 @@ export default function Entities() {
                   setTypeFilter('all');
                   setRiskFilter('all');
                   setProviderFilter('all');
-                  setRiskFactorFilter(null);
+                  setRiskFactorFilter("all");
                 }}
                 className="inline-flex items-center gap-1 px-3 py-1 bg-blue-900/30 border border-blue-500/30 rounded-full text-xs font-medium text-blue-300 hover:bg-blue-900/50 hover:border-blue-500/50 transition-colors"
               >

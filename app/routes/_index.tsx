@@ -91,15 +91,45 @@ export const loader: LoaderFunction = async ({ request }) => {
     const googleValidation = await validateGoogleCredentials(request);
     const googleCredentialsValid = googleValidation.isValid;
     
-    // Check if user has Google refresh token in database
+    // Check if user has Google refresh token in database and validate it
     const { getCurrentUser } = await import("~/lib/firebase");
     const currentUser = await getCurrentUser();
     let hasGoogleRefreshToken = false;
+    let refreshTokenValid = false;
     
     if (currentUser?.email) {
       const { getGoogleRefreshToken } = await import("~/lib/firebase");
       const refreshToken = await getGoogleRefreshToken(currentUser.email);
       hasGoogleRefreshToken = !!refreshToken;
+      
+      // If we have a refresh token, test if it's still valid
+      if (hasGoogleRefreshToken) {
+        try {
+          const { google } = await import('googleapis');
+          const clientId = process.env.GOOGLE_CLIENT_ID;
+          const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+          const redirectUri = process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000";
+
+          if (clientId && clientSecret) {
+            const oauth2Client = new google.auth.OAuth2(
+              clientId,
+              clientSecret,
+              redirectUri
+            );
+
+            oauth2Client.setCredentials({
+              refresh_token: refreshToken
+            });
+
+            // Try to refresh the access token to validate the refresh token
+            const tokenResponse = await oauth2Client.refreshAccessToken();
+            refreshTokenValid = !!tokenResponse.credentials.access_token;
+          }
+        } catch (error) {
+          // Refresh token is invalid or expired
+          refreshTokenValid = false;
+        }
+      }
     }
     
     // Make parallel requests to both AWS and Google APIs
@@ -109,8 +139,8 @@ export const loader: LoaderFunction = async ({ request }) => {
           Cookie: cookieHeader || "",
         },
       }),
-      // Try auto-fetch first if user has refresh token, otherwise use session credentials
-      hasGoogleRefreshToken 
+      // Try auto-fetch first if user has valid refresh token, otherwise use session credentials
+      refreshTokenValid 
         ? fetch(`${baseUrl}/api/google-users-auto`, {
             headers: {
               Cookie: cookieHeader || "",
@@ -129,7 +159,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     const googleData = await googleResponse.json();
 
     // Determine if Google is connected based on the response
-    const googleConnected = hasGoogleRefreshToken && googleData.success || googleCredentialsValid;
+    const googleConnected = refreshTokenValid && googleData.success || googleCredentialsValid;
     
     // Transform Google users to match AWS user format
     const transformedGoogleUsers = (googleData.users || []).map((user: any) => ({
@@ -177,14 +207,15 @@ export const loader: LoaderFunction = async ({ request }) => {
     return json({ 
       credentials: {
         aws: awsData.credentials,
-        google: googleConnected ? { connected: true, autoConnected: hasGoogleRefreshToken } : null
+        google: googleConnected ? { connected: true, autoConnected: refreshTokenValid } : null
       },
       users: combinedUsers,
       roles: combinedRoles,
       scoreHistory,
       error: awsData.error || (googleConnected ? googleData.error : null) || null,
       googleCredentialsValid: googleConnected,
-      hasGoogleRefreshToken
+      hasGoogleRefreshToken: hasGoogleRefreshToken,
+      refreshTokenValid: refreshTokenValid
     });
   } catch (error) {
     console.error("Error fetching IAM data:", error);
@@ -198,13 +229,14 @@ export const loader: LoaderFunction = async ({ request }) => {
       scoreHistory: [],
       error: "Failed to fetch IAM data. Please check your credentials.",
       googleCredentialsValid: false,
-      hasGoogleRefreshToken: false
+      hasGoogleRefreshToken: false,
+      refreshTokenValid: false
     });
   }
 };
 
 const Index = () => {
-  const { credentials, users, roles, scoreHistory, error, googleCredentialsValid, hasGoogleRefreshToken } = useLoaderData<typeof loader>();
+  const { credentials, users, roles, scoreHistory, error, googleCredentialsValid, hasGoogleRefreshToken, refreshTokenValid } = useLoaderData<typeof loader>();
 
   // Calculate shadow permissions for all entities and deduplicate them
   const shadowPermissions: ShadowPermissionRisk[] = (credentials.aws || (googleCredentialsValid && !!credentials.google)) ? [
@@ -258,11 +290,11 @@ const Index = () => {
             </div>
           </div>
         )}
-        {hasGoogleRefreshToken && !googleCredentialsValid && (
+        {hasGoogleRefreshToken && !refreshTokenValid && (
           <div className="mt-4 bg-orange-900/20 border border-orange-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 text-orange-400">
               <AlertCircle className="w-5 h-5" />
-              <span>Google refresh token found but failed to connect. Please reconnect your Google account in the Providers page.</span>
+              <span>Google refresh token found but is invalid or expired. Please reconnect your Google account in the Providers page.</span>
             </div>
           </div>
         )}
