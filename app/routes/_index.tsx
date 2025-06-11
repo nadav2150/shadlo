@@ -277,32 +277,11 @@ const Index = () => {
             </div>
           </div>
         )}
-        {!credentials.aws && googleCredentialsValid && credentials.google && (
-          <div className="mt-4 bg-blue-900/20 border border-blue-500/20 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-blue-400">
-              <CheckCircle className="w-5 h-5" />
-              <span>
-                {credentials.google.autoConnected 
-                  ? "Automatically connected to Google Workspace using saved credentials. AWS credentials not required."
-                  : "Connected to Google Workspace. AWS credentials not required."
-                }
-              </span>
-            </div>
-          </div>
-        )}
         {hasGoogleRefreshToken && !refreshTokenValid && (
           <div className="mt-4 bg-orange-900/20 border border-orange-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 text-orange-400">
               <AlertCircle className="w-5 h-5" />
               <span>Google refresh token found but is invalid or expired. Please reconnect your Google account in the Providers page.</span>
-            </div>
-          </div>
-        )}
-        {!googleCredentialsValid && credentials.google && !hasGoogleRefreshToken && (
-          <div className="mt-4 bg-red-900/20 border border-red-500/20 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-red-400">
-              <AlertCircle className="w-5 h-5" />
-              <span>Google credentials are invalid or expired. Please reconnect your Google account in the Providers page.</span>
             </div>
           </div>
         )}
