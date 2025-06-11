@@ -192,7 +192,8 @@ function GoogleLoginButton({ onSuccess, onError }: { onSuccess: (response: any) 
   const login = useGoogleLogin({
     onSuccess: (response) => onSuccess(response),
     onError: () => onError(),
-    flow: 'implicit',
+    flow: 'auth-code',
+    scope: 'https://www.googleapis.com/auth/admin.directory.user https://www.googleapis.com/auth/admin.directory.user.readonly',
   });
 
   return (
@@ -404,20 +405,34 @@ export default function ProvidersPage() {
     try {
       console.log("Google login successful:", credentialResponse);
       
-      // Send credentials to server
-      const formData = new FormData();
-      Object.entries(credentialResponse).forEach(([key, value]) => {
-        if (value != null) {
-          formData.append(key, String(value));
-        }
-      });
+      // Check if we have the authorization code
+      if (!credentialResponse.code) {
+        throw new Error("No authorization code received from Google");
+      }
 
+      console.log("Authorization code received:", credentialResponse.code.substring(0, 10) + "...");
+      
+      // Send the authorization code to server
+      const formData = new FormData();
+      formData.append("code", credentialResponse.code);
+      
+      // Add any other fields that might be useful
+      if (credentialResponse.authuser) {
+        formData.append("authuser", credentialResponse.authuser);
+      }
+      if (credentialResponse.scope) {
+        formData.append("scope", credentialResponse.scope);
+      }
+
+      console.log("Sending authorization code to backend...");
       const response = await fetch("/api/google/auth", {
         method: "POST",
         body: formData,
       });
 
       const data = await response.json();
+      
+      console.log("Backend response:", data);
       
       if (!response.ok) {
         throw new Error(data.details || data.error || "Failed to process credentials");
@@ -428,6 +443,14 @@ export default function ProvidersPage() {
       }
 
       setGoogleError(null);
+      
+      // Show success message
+      if (data.hasRefreshToken) {
+        console.log("✅ Successfully connected Google account with refresh token!");
+      } else {
+        console.log("⚠️ Connected Google account but no refresh token received");
+      }
+      
       window.location.reload();
     } catch (error) {
       console.error("Error handling Google login:", error);

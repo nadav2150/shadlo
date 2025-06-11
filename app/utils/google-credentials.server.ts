@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 
-import { getGoogleCredentials } from "~/utils/session.google.server";
+import { getGoogleCredentials, refreshGoogleAccessToken } from "~/utils/session.google.server";
 
 export async function validateGoogleCredentials(request: Request): Promise<{ isValid: boolean; error?: string }> {
   try {
@@ -9,16 +9,46 @@ export async function validateGoogleCredentials(request: Request): Promise<{ isV
     console.log("Debug - Google credentials validation:", {
       hasCredentials: !!googleCredentials,
       hasAccessToken: !!googleCredentials?.access_token,
-      tokenLength: googleCredentials?.access_token?.length
+      hasRefreshToken: !!googleCredentials?.refresh_token,
+      tokenLength: googleCredentials?.access_token?.length,
+      expiresAt: googleCredentials?.expires_at
     });
     
     if (!googleCredentials?.access_token) {
       return { isValid: false, error: "No Google credentials found" };
     }
 
+    // Check if token is expired
+    const isExpired = googleCredentials.expires_at && googleCredentials.expires_at < Math.floor(Date.now() / 1000);
+    
+    if (isExpired && googleCredentials.refresh_token) {
+      console.log("Access token expired, attempting to refresh...");
+      const refreshResult = await refreshGoogleAccessToken(request);
+      
+      if (!refreshResult.success) {
+        console.log("Failed to refresh access token:", refreshResult.error);
+        return { isValid: false, error: refreshResult.error || "Failed to refresh access token" };
+      }
+      
+      console.log("Successfully refreshed access token");
+      // Get the updated credentials after refresh
+      const updatedCredentials = await getGoogleCredentials(request);
+      if (!updatedCredentials?.access_token) {
+        return { isValid: false, error: "Failed to get updated credentials after refresh" };
+      }
+    } else if (isExpired && !googleCredentials.refresh_token) {
+      return { isValid: false, error: "Access token expired and no refresh token available" };
+    }
+
+    // Get the current credentials (might be updated after refresh)
+    const currentCredentials = await getGoogleCredentials(request);
+    if (!currentCredentials?.access_token) {
+      return { isValid: false, error: "No valid access token available" };
+    }
+
     // Initialize the Admin SDK client
     const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: googleCredentials.access_token });
+    auth.setCredentials({ access_token: currentCredentials.access_token });
     
     const admin = google.admin({ version: 'directory_v1', auth });
     

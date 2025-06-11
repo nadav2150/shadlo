@@ -24,17 +24,79 @@ export const action: ActionFunction = async ({ request }) => {
 
   try {
     const formData = await request.formData();
-    const accessToken = formData.get("access_token")?.toString();
+    const code = formData.get("code")?.toString();
 
-    if (!accessToken) {
-      return json({ error: "Access token is required" }, { status: 400 });
+    if (!code) {
+      return json({ error: "Authorization code is required" }, { status: 400 });
     }
 
-    // Initialize the Admin SDK client
-    const auth = new google.auth.OAuth2();
-    auth.setCredentials({ access_token: accessToken });
+    // Get OAuth2 client credentials from environment
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = process.env.GOOGLE_REDIRECT_URI || "http://localhost:3000";
+
+    if (!clientId || !clientSecret) {
+      console.error("Missing Google OAuth2 credentials in environment");
+      return json({ error: "Server configuration error" }, { status: 500 });
+    }
+
+    // Initialize OAuth2 client
+    const oauth2Client = new google.auth.OAuth2(
+      clientId,
+      clientSecret,
+      redirectUri
+    );
+
+    // Exchange authorization code for tokens
+    console.log("Exchanging authorization code for tokens...");
     
-    const admin = google.admin({ version: 'directory_v1', auth });
+    // Manually construct the token request to avoid PKCE issues
+    const tokenUrl = 'https://oauth2.googleapis.com/token';
+    const tokenData = new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      code: code,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri,
+    });
+
+    const tokenResponse = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: tokenData.toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorData = await tokenResponse.json();
+      console.error("Token exchange failed:", errorData);
+      throw new Error(`Token exchange failed: ${errorData.error_description || errorData.error}`);
+    }
+
+    const tokens = await tokenResponse.json();
+    
+    if (!tokens.access_token) {
+      throw new Error("Failed to obtain access token from Google");
+    }
+
+    console.log("Successfully obtained tokens from Google:", {
+      hasAccessToken: !!tokens.access_token,
+      hasRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      scope: tokens.scope
+    });
+
+    // Set credentials for API calls using the Google OAuth2 client
+    oauth2Client.setCredentials({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      scope: tokens.scope,
+      token_type: tokens.token_type,
+      expiry_date: tokens.expires_in ? Date.now() + (tokens.expires_in * 1000) : undefined
+    });
+    
+    const admin = google.admin({ version: 'directory_v1', auth: oauth2Client });
     
     // Fetch users from Google Workspace
     const response = await admin.users.list({
@@ -58,13 +120,20 @@ export const action: ActionFunction = async ({ request }) => {
       orgUnitPath: user.orgUnitPath || '',
     })) || [];
 
+    // Calculate expiration timestamp
+    const expiresAt = tokens.expires_in 
+      ? Math.floor(Date.now() / 1000) + tokens.expires_in 
+      : undefined;
+
     // Prepare credentials for session storage
     const credentials: GoogleCredentials = {
-      access_token: accessToken,
-      scope: formData.get("scope")?.toString() || '',
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      scope: tokens.scope || '',
       authuser: formData.get("authuser")?.toString() || '',
-      expires_in: Number(formData.get("expires_in")) || 0,
-      token_type: formData.get("token_type")?.toString() || ''
+      expires_in: tokens.expires_in || 0,
+      token_type: tokens.token_type || 'Bearer',
+      expires_at: expiresAt
     };
 
     // Store credentials in session
@@ -72,12 +141,19 @@ export const action: ActionFunction = async ({ request }) => {
 
     // Log success (without sensitive data)
     console.log(`Successfully fetched ${users.length} users from Google Workspace`);
+    console.log("Token exchange successful:", {
+      hasRefreshToken: !!tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      expiresAt: expiresAt
+    });
 
     return json(
       { 
         success: true,
         users,
-        userCount: users.length
+        userCount: users.length,
+        hasRefreshToken: !!tokens.refresh_token,
+        expiresIn: tokens.expires_in
       },
       {
         headers: {
@@ -86,7 +162,7 @@ export const action: ActionFunction = async ({ request }) => {
       }
     );
   } catch (error: any) {
-    console.error("Error processing Google credentials:", error);
+    console.error("Error processing Google authorization code:", error);
     
     if (error.response) {
       console.error("Google API Error Details:", {
@@ -98,7 +174,7 @@ export const action: ActionFunction = async ({ request }) => {
 
     return json(
       { 
-        error: "Failed to fetch users from Google Workspace",
+        error: "Failed to exchange authorization code for tokens",
         details: error.message || "Unknown error occurred"
       },
       { status: 500 }
