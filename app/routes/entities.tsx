@@ -88,6 +88,7 @@ interface GoogleUser {
   lastUsed?: string;
   policies: Policy[];
   hasMFA: boolean;
+  suspended?: boolean;
   riskAssessment?: {
     riskLevel: 'low' | 'medium' | 'high' | 'critical';
     score: number;
@@ -256,6 +257,7 @@ export const loader: LoaderFunction = async ({ request }) => {
               lastUsed: user.lastLoginTime || undefined,
               policies: [], // Google API doesn't provide policies in the same way
               hasMFA: user.isEnrolledIn2Sv,
+              suspended: user.suspended || false,
               riskAssessment: {
                 riskLevel: riskAssessment.level.toLowerCase() as 'low' | 'medium' | 'high' | 'critical',
                 score: riskAssessment.score,
@@ -533,9 +535,7 @@ export default function Entities() {
     }
 
     const suspendedCount = users.filter(user => 
-      user.provider === 'google' && (user as GoogleUser).riskAssessment?.factors?.some(factor => 
-        factor.includes('suspended')
-      )
+      user.provider === 'google' && (user as GoogleUser).suspended === true
     ).length;
     if (suspendedCount > 0) {
       riskFactors.set('suspended', {
@@ -642,7 +642,7 @@ export default function Entities() {
     }
 
     // Apply risk factor filter
-    if (riskFactorFilter) {
+    if (riskFactorFilter && riskFactorFilter !== 'all') {
       filtered = filtered.filter(entity => {
         switch (riskFactorFilter) {
           case 'no-mfa':
@@ -659,12 +659,14 @@ export default function Entities() {
           case 'high-risk':
             return entity.riskAssessment?.riskLevel === 'high' || entity.riskAssessment?.riskLevel === 'critical';
           default:
-            // Handle dynamic risk factors
-            if (riskFactorFilter.startsWith('dynamic-')) {
-              const factorKey = riskFactorFilter.replace('dynamic-', '');
-              return entity.riskAssessment?.factors?.some(factor => 
-                factor.toLowerCase().trim().replace(/[^a-z0-9]/g, '-') === factorKey
-              ) || false;
+            // Handle dynamic risk factors - check if the factor key matches any of the entity's risk factors
+            const allRiskFactors = getAllRiskFactors();
+            if (allRiskFactors.has(riskFactorFilter)) {
+              const factorKey = riskFactorFilter;
+              return entity.riskAssessment?.factors?.some(factor => {
+                const cleanFactor = factor.toLowerCase().trim().replace(/[^a-z0-9]/g, '-');
+                return cleanFactor === factorKey;
+              }) || false;
             }
             return true;
         }
@@ -1156,9 +1158,7 @@ export default function Entities() {
             </div>
             <div className="flex flex-wrap gap-2">
               {Array.from(getAllRiskFactors().entries()).map(([key, factor], index) => {
-                const isActive = riskFactorFilter === key || riskFactorFilter === `dynamic-${key}`;
-                const isDynamic = !['no-mfa', 'never-logged-in', 'no-activity', 'admin-access', 'suspended', 'high-risk'].includes(key);
-                const filterKey = isDynamic ? `dynamic-${key}` : key;
+                const isActive = riskFactorFilter === key;
                 
                 // Show only first 5 badges unless showAllRiskFactors is true
                 if (!showAllRiskFactors && index >= 5) {
@@ -1188,7 +1188,7 @@ export default function Entities() {
                       setTypeFilter('all');
                       setRiskFilter('all');
                       setProviderFilter('all');
-                      setRiskFactorFilter(isActive ? "all" : factor.label);
+                      setRiskFactorFilter(isActive ? "all" : key);
                     }}
                     className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${getColorClasses(factor.color, isActive)} ${isActive ? 'ring-2 ring-white/20 scale-105' : 'hover:scale-105'}`}
                     title={isActive ? `Filtering by: ${factor.label}` : `Filter by: ${factor.label}`}
