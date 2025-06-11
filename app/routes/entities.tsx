@@ -314,6 +314,45 @@ export default function Entities() {
     }
   };
 
+  // Helper function to format relative time
+  const formatRelativeTime = (dateStr: string | undefined): string => {
+    if (!dateStr) return 'Never';
+    try {
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffInMs = now.getTime() - date.getTime();
+      const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+      const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+      const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+      const diffInMonths = Math.floor(diffInDays / 30);
+      const diffInYears = Math.floor(diffInDays / 365);
+
+      if (diffInMinutes < 1) return 'Just now';
+      if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes === 1 ? '' : 's'} ago`;
+      if (diffInHours < 24) return `${diffInHours} hour${diffInHours === 1 ? '' : 's'} ago`;
+      if (diffInDays < 30) return `${diffInDays} day${diffInDays === 1 ? '' : 's'} ago`;
+      if (diffInMonths < 12) return `${diffInMonths} month${diffInMonths === 1 ? '' : 's'} ago`;
+      return `${diffInYears} year${diffInYears === 1 ? '' : 's'} ago`;
+    } catch {
+      return 'Invalid Date';
+    }
+  };
+
+  // Helper function to get the most recent last used date from access keys
+  const getMostRecentLastUsed = (accessKeys: AccessKey[] | undefined): string | undefined => {
+    if (!accessKeys || accessKeys.length === 0) return undefined;
+    
+    const validLastUsedDates = accessKeys
+      .filter(key => key.lastUsed)
+      .map(key => new Date(key.lastUsed!))
+      .filter(date => !isNaN(date.getTime()));
+    
+    if (validLastUsedDates.length === 0) return undefined;
+    
+    const mostRecent = new Date(Math.max(...validLastUsedDates.map(date => date.getTime())));
+    return mostRecent.toISOString();
+  };
+
   // Helper function to check if user is inactive (no activity for 90+ days)
   const isInactive = (lastUsed: string): boolean => {
     try {
@@ -1179,18 +1218,24 @@ export default function Entities() {
                             )}
                           </div>
                         </th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28]">
+                          API Keys
+                        </th>
+                        <th className="px-4 py-3 text-left font-medium bg-[#1a1f28]">
+                          Last API Usage
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#23272f]">
                       {isLoading ? (
                         <tr>
-                          <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                          <td colSpan={10} className="px-6 py-8 text-center text-gray-400">
                             <LoadingSpinner text="Loading entities..." />
                           </td>
                         </tr>
                       ) : errorMessage ? (
                         <tr>
-                          <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                          <td colSpan={10} className="px-6 py-8 text-center text-gray-400">
                             <div className="flex flex-col items-center gap-2">
                               <AlertTriangle className="w-8 h-8 text-red-500" />
                               <span>{errorMessage}</span>
@@ -1199,7 +1244,7 @@ export default function Entities() {
                         </tr>
                       ) : allEntities.length === 0 ? (
                         <tr>
-                          <td colSpan={8} className="px-6 py-8 text-center text-gray-400">
+                          <td colSpan={10} className="px-6 py-8 text-center text-gray-400">
                             No entities found
                           </td>
                         </tr>
@@ -1374,6 +1419,20 @@ export default function Entities() {
                                     <span className="text-gray-500">No policies</span>
                                   )}
                                 </div>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="text-gray-300">
+                                  {entity.type === 'user' && (entity as IAMUser | GoogleUser).accessKeys 
+                                    ? (entity as IAMUser | GoogleUser).accessKeys!.length 
+                                    : entity.type === 'user' ? 0 : 'N/A'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="text-gray-300">
+                                  {entity.type === 'user' && (entity as IAMUser | GoogleUser).accessKeys 
+                                    ? formatRelativeTime(getMostRecentLastUsed((entity as IAMUser | GoogleUser).accessKeys))
+                                    : entity.type === 'user' ? 'Never' : 'N/A'}
+                                </span>
                               </td>
                             </tr>
                           );

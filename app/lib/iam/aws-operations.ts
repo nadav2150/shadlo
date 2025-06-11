@@ -1,4 +1,4 @@
-import { IAMClient, ListUsersCommand, ListUserPoliciesCommand, ListAttachedUserPoliciesCommand, ListAccessKeysCommand, ListMFADevicesCommand, ListRolesCommand, ListRolePoliciesCommand, ListAttachedRolePoliciesCommand, AttachedPolicy, AccessKeyMetadata } from '@aws-sdk/client-iam';
+import { IAMClient, ListUsersCommand, ListUserPoliciesCommand, ListAttachedUserPoliciesCommand, ListAccessKeysCommand, ListMFADevicesCommand, ListRolesCommand, ListRolePoliciesCommand, ListAttachedRolePoliciesCommand, AttachedPolicy, AccessKeyMetadata, GetAccessKeyLastUsedCommand } from '@aws-sdk/client-iam';
 import { UserDetails, Policy, AccessKey, RoleDetails } from './types';
 
 export async function getIAMUsers(iamClient: IAMClient): Promise<UserDetails[]> {
@@ -63,12 +63,35 @@ async function getUserAccessKeys(iamClient: IAMClient, userName: string): Promis
   const { AccessKeyMetadata } = await iamClient.send(new ListAccessKeysCommand({ UserName: userName }));
   if (!AccessKeyMetadata) return [];
 
-  return AccessKeyMetadata.map((key: AccessKeyMetadata) => ({
-    id: key.AccessKeyId!,
-    createDate: key.CreateDate!.toISOString(),
-    lastUsed: undefined, // LastUsed information is not available in AccessKeyMetadata
-    status: key.Status!
-  }));
+  // Get last used information for each access key
+  const accessKeysWithLastUsed = await Promise.all(
+    AccessKeyMetadata.map(async (key: AccessKeyMetadata) => {
+      try {
+        const { AccessKeyLastUsed } = await iamClient.send(
+          new GetAccessKeyLastUsedCommand({ 
+            AccessKeyId: key.AccessKeyId! 
+          })
+        );
+
+        return {
+          id: key.AccessKeyId!,
+          createDate: key.CreateDate!.toISOString(),
+          lastUsed: AccessKeyLastUsed?.LastUsedDate?.toISOString(),
+          status: key.Status!
+        };
+      } catch (error) {
+        // If we can't get last used info, return without it
+        return {
+          id: key.AccessKeyId!,
+          createDate: key.CreateDate!.toISOString(),
+          lastUsed: undefined,
+          status: key.Status!
+        };
+      }
+    })
+  );
+
+  return accessKeysWithLastUsed;
 }
 
 async function getUserMFADevices(iamClient: IAMClient, userName: string): Promise<any[]> {
