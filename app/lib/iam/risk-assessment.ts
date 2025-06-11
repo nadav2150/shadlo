@@ -16,12 +16,52 @@ interface RiskScore {
   }[];
 }
 
-function calculateLastUsedScore(lastUsed?: string): number {
-  if (!lastUsed) return 5; // No last used date means high risk
+function calculateLastUsedScore(entity: UserDetails | RoleDetails): number {
+  // For roles, use the existing logic
+  if ('type' in entity && entity.type === 'role') {
+    if (!entity.lastUsed) return 5; // No last used date means high risk
+    
+    const lastUsedDate = new Date(entity.lastUsed);
+    const now = new Date();
+    const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (daysAgo <= 30) return 0;
+    if (daysAgo <= 90) return 2;
+    if (daysAgo <= 180) return 3;
+    return 5;
+  }
+
+  // For users, check both user lastUsed and API key usage
+  const user = entity as UserDetails;
   
-  const lastUsedDate = new Date(lastUsed);
+  // Get the most recent activity date from either user lastUsed or API key usage
+  let mostRecentActivity: Date | null = null;
+  
+  // Check user lastUsed
+  if (user.lastUsed) {
+    mostRecentActivity = new Date(user.lastUsed);
+  }
+  
+  // Check API key usage
+  if (user.accessKeys && user.accessKeys.length > 0) {
+    const validLastUsedDates = user.accessKeys
+      .filter(key => key.lastUsed)
+      .map(key => new Date(key.lastUsed!))
+      .filter(date => !isNaN(date.getTime()));
+    
+    if (validLastUsedDates.length > 0) {
+      const mostRecentApiUsage = new Date(Math.max(...validLastUsedDates.map(date => date.getTime())));
+      if (!mostRecentActivity || mostRecentApiUsage > mostRecentActivity) {
+        mostRecentActivity = mostRecentApiUsage;
+      }
+    }
+  }
+  
+  // If no activity found, return high risk
+  if (!mostRecentActivity) return 5;
+  
   const now = new Date();
-  const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+  const daysAgo = Math.floor((now.getTime() - mostRecentActivity.getTime()) / (1000 * 60 * 60 * 24));
 
   if (daysAgo <= 30) return 0;
   if (daysAgo <= 90) return 2;
@@ -103,20 +143,42 @@ function calculateIdentityContextScore(entity: UserDetails | RoleDetails): numbe
   // A user is considered orphaned if:
   // 1. No access keys or all keys are inactive
   // 2. No MFA configured
-  // 3. No last used date
+  // 3. No last used date AND no API key activity
+  const hasApiKeyActivity = user.accessKeys && user.accessKeys.some(key => key.lastUsed);
   const isOrphaned = (!user.accessKeys || user.accessKeys.length === 0 || 
                      user.accessKeys.every(key => key.status === 'Inactive')) &&
                      !user.hasMFA && 
-                     !user.lastUsed;
+                     !user.lastUsed && !hasApiKeyActivity;
 
   // A user is considered inactive if:
-  // 1. No activity in 90+ days
+  // 1. No activity in 90+ days (considering both user lastUsed and API key usage)
   // 2. All access keys are inactive
-  const isInactive = !user.lastUsed || 
+  let mostRecentActivity: Date | null = null;
+  
+  // Check user lastUsed
+  if (user.lastUsed) {
+    mostRecentActivity = new Date(user.lastUsed);
+  }
+  
+  // Check API key usage
+  if (user.accessKeys && user.accessKeys.length > 0) {
+    const validLastUsedDates = user.accessKeys
+      .filter(key => key.lastUsed)
+      .map(key => new Date(key.lastUsed!))
+      .filter(date => !isNaN(date.getTime()));
+    
+    if (validLastUsedDates.length > 0) {
+      const mostRecentApiUsage = new Date(Math.max(...validLastUsedDates.map(date => date.getTime())));
+      if (!mostRecentActivity || mostRecentApiUsage > mostRecentActivity) {
+        mostRecentActivity = mostRecentApiUsage;
+      }
+    }
+  }
+  
+  const isInactive = !mostRecentActivity || 
                     (() => {
-                      const lastUsedDate = new Date(user.lastUsed);
                       const now = new Date();
-                      const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
+                      const daysAgo = Math.floor((now.getTime() - mostRecentActivity!.getTime()) / (1000 * 60 * 60 * 24));
                       return daysAgo > 90;
                     })() ||
                     (user.accessKeys && user.accessKeys.every(key => key.status === 'Inactive'));
@@ -169,9 +231,12 @@ function generateRiskFactors(
         factors.push('MFA is not enabled');
       }
     } else if (identityScore === 3) {
-      if (!user.lastUsed) {
+      // Check if user has any API key activity before showing "never been used"
+      const hasApiKeyActivity = user.accessKeys && user.accessKeys.some(key => key.lastUsed);
+      
+      if (!user.lastUsed && !hasApiKeyActivity) {
         factors.push('User has never been used');
-      } else {
+      } else if (user.lastUsed) {
         const lastUsedDate = new Date(user.lastUsed);
         const now = new Date();
         const daysAgo = Math.floor((now.getTime() - lastUsedDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -232,7 +297,7 @@ function getRiskLevelDescription(riskLevel: 'low' | 'medium' | 'high' | 'critica
 
 export function calculateRiskScore(entity: UserDetails | RoleDetails): RiskScore {
   // Calculate individual scores
-  const lastUsedScore = calculateLastUsedScore(entity.lastUsed);
+  const lastUsedScore = calculateLastUsedScore(entity);
   const permissionScore = calculatePermissionLevelScore(entity.policies);
   const identityScore = calculateIdentityContextScore(entity);
 

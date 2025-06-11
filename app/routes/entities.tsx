@@ -1343,11 +1343,15 @@ export default function Entities() {
                                     <div className="text-sm space-y-3">
                                       <div className="space-y-1">
                                         <div className="font-semibold text-white">Risk Factors</div>
-                                        <ul className="list-disc list-inside space-y-1">
-                                          {entity?.riskAssessment?.factors?.map((factor, i) => (
-                                            <li key={i} className="text-gray-300">{factor}</li>
-                                          ))}
-                                        </ul>
+                                        {entity?.riskAssessment?.factors && entity.riskAssessment.factors.length > 0 ? (
+                                          <ul className="list-disc list-inside space-y-1">
+                                            {entity.riskAssessment.factors.map((factor, i) => (
+                                              <li key={i} className="text-gray-300">{factor}</li>
+                                            ))}
+                                          </ul>
+                                        ) : (
+                                          <div className="text-gray-400 italic">No risk factors identified</div>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
