@@ -218,6 +218,28 @@ export async function checkAndMarkGoogleProviderConnected(email: string): Promis
   }
 }
 
+// Function to remove Google refresh token from client's Firestore document
+export async function removeGoogleRefreshToken(email: string): Promise<void> {
+  try {
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      // User exists, remove their Google refresh token and connection status
+      const userDoc = querySnapshot.docs[0];
+      await updateDoc(doc(db, "clients", userDoc.id), {
+        googleRefreshToken: null,
+        googleProviderConnected: false,
+        googleTokenUpdatedAt: null
+      });
+    }
+  } catch (error) {
+    console.error("Error removing Google refresh token from Firestore:", error);
+    throw error;
+  }
+}
+
 export { 
   auth, 
   signInWithEmailAndPassword, 
