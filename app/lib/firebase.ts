@@ -142,6 +142,67 @@ export async function saveClientSignInData(email: string): Promise<void> {
   }
 }
 
+// Function to save Google refresh token to client's Firestore document
+export async function saveGoogleRefreshToken(email: string, refreshToken: string): Promise<void> {
+  try {
+    // Check if user exists in clients collection
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      // User exists, update their Google refresh token
+      const userDoc = querySnapshot.docs[0];
+      await updateDoc(doc(db, "clients", userDoc.id), {
+        googleRefreshToken: refreshToken,
+        googleTokenUpdatedAt: serverTimestamp()
+      });
+      console.log("Updated Google refresh token for client:", email);
+    } else {
+      // User doesn't exist, create new document with Google token
+      const clientData = {
+        email: email,
+        googleRefreshToken: refreshToken,
+        googleTokenUpdatedAt: serverTimestamp(),
+        lastSignInAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        // Default email notification settings
+        emailNotificationsEnabled: true,
+        reportFrequency: "weekly",
+        reportEmailAddress: email,
+        companyName: "",
+        lastSettingsUpdate: serverTimestamp(),
+        sendOnEmailDate: new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)) // 7 days from now
+      };
+
+      const docRef = await addDoc(collection(db, "clients"), clientData);
+      console.log("Created new client document with Google refresh token, ID:", docRef.id);
+    }
+  } catch (error) {
+    console.error("Error saving Google refresh token to Firestore:", error);
+    throw error;
+  }
+}
+
+// Function to get Google refresh token from client's Firestore document
+export async function getGoogleRefreshToken(email: string): Promise<string | null> {
+  try {
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const userDoc = querySnapshot.docs[0].data();
+      return userDoc.googleRefreshToken || null;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error getting Google refresh token from Firestore:", error);
+    return null;
+  }
+}
+
 export { 
   auth, 
   signInWithEmailAndPassword, 

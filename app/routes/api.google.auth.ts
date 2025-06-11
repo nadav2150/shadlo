@@ -1,6 +1,7 @@
 import { json, type ActionFunction } from "@remix-run/node";
 import { google } from 'googleapis';
 import { setGoogleCredentials, type GoogleCredentials } from "~/utils/session.google.server";
+import { getCurrentUser, saveGoogleRefreshToken } from "~/lib/firebase";
 
 interface GoogleUser {
   id: string;
@@ -147,12 +148,29 @@ export const action: ActionFunction = async ({ request }) => {
       expiresAt: expiresAt
     });
 
+    // Save refresh token to Firestore
+    const user = await getCurrentUser();
+    let firestoreSaved = false;
+    if (user?.email && tokens.refresh_token) {
+      try {
+        await saveGoogleRefreshToken(user.email, tokens.refresh_token);
+        console.log("Successfully saved Google refresh token to Firestore for:", user.email);
+        firestoreSaved = true;
+      } catch (firestoreError) {
+        console.error("Failed to save Google refresh token to Firestore:", firestoreError);
+        // Don't fail the entire operation if Firestore save fails
+      }
+    } else {
+      console.warn("Cannot save refresh token: user email or refresh token missing");
+    }
+
     return json(
       { 
         success: true,
         users,
         userCount: users.length,
         hasRefreshToken: !!tokens.refresh_token,
+        firestoreSaved,
         expiresIn: tokens.expires_in
       },
       {

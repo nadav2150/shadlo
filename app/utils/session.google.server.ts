@@ -1,5 +1,6 @@
 import { createCookieSessionStorage } from "@remix-run/node";
 import { google } from 'googleapis';
+import { getGoogleRefreshToken } from "~/lib/firebase";
 
 // Define the Google credentials type
 export interface GoogleCredentials {
@@ -53,7 +54,19 @@ export async function refreshGoogleAccessToken(
   try {
     const currentCredentials = await getGoogleCredentials(request);
     
-    if (!currentCredentials?.refresh_token) {
+    // Try to get refresh token from session first, then from Firestore
+    let refreshToken = currentCredentials?.refresh_token;
+    
+    if (!refreshToken && currentCredentials?.authuser) {
+      // If no refresh token in session, try to get it from Firestore
+      console.log("No refresh token in session, trying to get from Firestore...");
+      const firestoreRefreshToken = await getGoogleRefreshToken(currentCredentials.authuser);
+      if (firestoreRefreshToken) {
+        refreshToken = firestoreRefreshToken;
+      }
+    }
+    
+    if (!refreshToken) {
       return { success: false, error: "No refresh token available" };
     }
 
@@ -74,8 +87,8 @@ export async function refreshGoogleAccessToken(
 
     // Set current credentials
     oauth2Client.setCredentials({
-      refresh_token: currentCredentials.refresh_token,
-      access_token: currentCredentials.access_token
+      refresh_token: refreshToken,
+      access_token: currentCredentials?.access_token
     });
 
     // Refresh the access token
@@ -94,9 +107,9 @@ export async function refreshGoogleAccessToken(
     // Create new credentials object
     const newCredentials: GoogleCredentials = {
       access_token: newTokens.access_token,
-      refresh_token: currentCredentials.refresh_token, // Keep the same refresh token
-      scope: newTokens.scope || currentCredentials.scope,
-      authuser: currentCredentials.authuser,
+      refresh_token: refreshToken, // Keep the same refresh token
+      scope: newTokens.scope || currentCredentials?.scope || '',
+      authuser: currentCredentials?.authuser || '',
       expires_in: newTokens.expiry_date ? Math.floor((newTokens.expiry_date - Date.now()) / 1000) : 0,
       token_type: newTokens.token_type || 'Bearer',
       expires_at: expiresAt
