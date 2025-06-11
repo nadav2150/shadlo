@@ -139,6 +139,7 @@ interface LoaderData {
     region: string;
   } | null;
   googleCredentialsValid: boolean;
+  hasGoogleRefreshToken?: boolean;
 }
 
 export const loader: LoaderFunction = async ({ request }) => {
@@ -171,19 +172,34 @@ export const loader: LoaderFunction = async ({ request }) => {
       // Continue without AWS data
     }
 
+    // Check if user has Google refresh token in database
+    const { getCurrentUser, getGoogleRefreshToken } = await import("~/lib/firebase");
+    const currentUser = await getCurrentUser();
+    let hasGoogleRefreshToken = false;
+    
+    if (currentUser?.email) {
+      const refreshToken = await getGoogleRefreshToken(currentUser.email);
+      hasGoogleRefreshToken = !!refreshToken;
+    }
+
     // Validate Google credentials before attempting to fetch data
     const googleValidation = await validateGoogleCredentials(request);
     googleCredentialsValid = googleValidation.isValid;
     
 
-    if (googleValidation.isValid) {
-      // Try to fetch Google data only if credentials are valid
+    // Try to fetch Google data using auto-fetch if user has refresh token, otherwise use session credentials
+    if (hasGoogleRefreshToken || googleValidation.isValid) {
       try {
-        const googleResponse = await fetch(`${baseUrl}/api/google-users`, {
-          headers: {
-            Cookie: cookieHeader || "",
-          },
-        });
+        const googleResponse = await fetch(
+          hasGoogleRefreshToken 
+            ? `${baseUrl}/api/google-users-auto`
+            : `${baseUrl}/api/google-users`,
+          {
+            headers: {
+              Cookie: cookieHeader || "",
+            },
+          }
+        );
         
         if (googleResponse.ok) {
           const googleData = await googleResponse.json();
@@ -220,6 +236,9 @@ export const loader: LoaderFunction = async ({ request }) => {
               }
             };
           }) || [];
+          
+          // Update credentials valid status based on successful fetch
+          googleCredentialsValid = true;
         } else {
           const errorText = await googleResponse.text();
           googleCredentialsValid = false; // Mark as invalid if API call fails
@@ -243,7 +262,8 @@ export const loader: LoaderFunction = async ({ request }) => {
       roles: awsData.roles || [],
       credentials: awsData.credentials || null,
       error: awsData.error || null,
-      googleCredentialsValid
+      googleCredentialsValid,
+      hasGoogleRefreshToken
     });
   } catch (error) {
     console.error("Error in loader:", error);
@@ -390,14 +410,14 @@ type SortField = 'type' | 'provider' | 'name' | 'created' | 'lastUsed' | 'mfa' |
 type SortDirection = 'asc' | 'desc';
 
 export default function Entities() {
-  const { users = [], roles = [], credentials, error, googleCredentialsValid } = useLoaderData<LoaderData>();
+  const { users, roles, error, credentials, googleCredentialsValid, hasGoogleRefreshToken } = useLoaderData<LoaderData>();
   const [searchQuery, setSearchQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<"all" | "user" | "role">("all");
   const [riskFilter, setRiskFilter] = useState<"all" | "low" | "medium" | "high" | "critical">("all");
-  const [providerFilter, setProviderFilter] = useState<"all" | "aws" | "google">("all");
-  const [sortField, setSortField] = useState<SortField>('created');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [riskFactorFilter, setRiskFactorFilter] = useState<string | null>(null);
+  const [providerFilter, setProviderFilter] = useState<"all" | "aws" | "google" | "azure" | "gcp">("all");
+  const [riskFactorFilter, setRiskFactorFilter] = useState<string>("all");
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
   const [showAllRiskFactors, setShowAllRiskFactors] = useState(false);
 
   // Check which providers are connected
@@ -1083,7 +1103,7 @@ export default function Entities() {
             {/* Provider Filter */}
             <select
               value={providerFilter}
-              onChange={(e) => setProviderFilter(e.target.value as "all" | "aws" | "google")}
+              onChange={(e) => setProviderFilter(e.target.value as "all" | "aws" | "google" | "azure" | "gcp")}
               className="px-4 py-2 bg-[#1a1f28] border border-[#23272f] rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">All Providers</option>
@@ -1136,7 +1156,7 @@ export default function Entities() {
                       setTypeFilter('all');
                       setRiskFilter('all');
                       setProviderFilter('all');
-                      setRiskFactorFilter(isActive ? null : filterKey);
+                      setRiskFactorFilter(isActive ? "all" : factor.label);
                     }}
                     className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${getColorClasses(factor.color, isActive)} ${isActive ? 'ring-2 ring-white/20 scale-105' : 'hover:scale-105'}`}
                     title={isActive ? `Filtering by: ${factor.label}` : `Filter by: ${factor.label}`}

@@ -30,8 +30,16 @@ export const loader: LoaderFunction = async ({ request }) => {
   if (googleCredentials?.access_token) {
     const validation = await validateGoogleCredentials(request);
     googleCredentialsValid = validation.isValid;
-    
-
+  }
+  
+  // Check if user has Google refresh token in database
+  const { getCurrentUser, getGoogleRefreshToken } = await import("~/lib/firebase");
+  const currentUser = await getCurrentUser();
+  let hasGoogleRefreshToken = false;
+  
+  if (currentUser?.email) {
+    const refreshToken = await getGoogleRefreshToken(currentUser.email);
+    hasGoogleRefreshToken = !!refreshToken;
   }
   
   return json({
@@ -40,7 +48,8 @@ export const loader: LoaderFunction = async ({ request }) => {
     },
     googleClientId: process.env.GOOGLE_CLIENT_ID,
     googleCredentials: googleCredentialsValid ? googleCredentials : null,
-    googleCredentialsValid
+    googleCredentialsValid,
+    hasGoogleRefreshToken
   });
 };
 
@@ -326,7 +335,7 @@ function ProviderCard({
 }
 
 export default function ProvidersPage() {
-  const { credentials, googleClientId, googleCredentials: initialGoogleCredentials, googleCredentialsValid } = useLoaderData<typeof loader>();
+  const { credentials, googleClientId, googleCredentials: initialGoogleCredentials, googleCredentialsValid, hasGoogleRefreshToken } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
   const navigation = useNavigation();
   const [showModal, setShowModal] = useState(false);
@@ -468,6 +477,24 @@ export default function ProvidersPage() {
           </div>
         )}
 
+        {hasGoogleRefreshToken && !googleCredentialsValid && (
+          <div className="mb-4 p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg">
+            <div className="flex items-center gap-2 text-orange-400">
+              <AlertCircle className="w-5 h-5" />
+              <span>Google refresh token found but failed to connect. Please reconnect your Google account.</span>
+            </div>
+          </div>
+        )}
+
+        {hasGoogleRefreshToken && googleCredentialsValid && (
+          <div className="mb-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+            <div className="flex items-center gap-2 text-green-400">
+              <CheckCircle2 className="w-5 h-5" />
+              <span>Google Workspace automatically connected using saved credentials.</span>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <ProviderCard
             name="AWS"
@@ -481,13 +508,17 @@ export default function ProvidersPage() {
 
           <ProviderCard
             name="Google"
-            description="Connect your Google Workspace to manage users and groups"
+            description={
+              hasGoogleRefreshToken 
+                ? "Automatically connected using saved credentials. No manual authentication required."
+                : "Connect your Google Workspace to manage users and groups"
+            }
             icon={<Mail className="w-6 h-6 text-red-400" />}
-            isConnected={isGoogleConnected}
+            isConnected={isGoogleConnected || hasGoogleRefreshToken}
             isInvalid={!googleCredentialsValid && !!initialGoogleCredentials}
             onDisconnect={handleGoogleDisconnect}
             customConnectButton={
-              !isGoogleConnected && (
+              !isGoogleConnected && !hasGoogleRefreshToken && (
                 <GoogleLoginButton
                   onSuccess={handleGoogleSuccess}
                   onError={handleGoogleError}

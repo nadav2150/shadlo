@@ -182,6 +182,42 @@ export async function getGoogleRefreshToken(email: string): Promise<string | nul
   }
 }
 
+// Function to check if user has Google refresh token and mark provider as connected
+export async function checkAndMarkGoogleProviderConnected(email: string): Promise<{ hasRefreshToken: boolean; isConnected: boolean }> {
+  try {
+    const clientsRef = collection(db, "clients");
+    const q = query(clientsRef, where("email", "==", email));
+    const querySnapshot = await getDocs(q);
+
+    if (!querySnapshot.empty) {
+      const userDoc = querySnapshot.docs[0];
+      const userData = userDoc.data();
+      
+      // Check if user has a Google refresh token
+      const hasRefreshToken = !!userData.googleRefreshToken;
+      
+      // If they have a refresh token but no connection status, mark as connected
+      if (hasRefreshToken && !userData.googleProviderConnected) {
+        await updateDoc(doc(db, "clients", userDoc.id), {
+          googleProviderConnected: true,
+          googleProviderConnectedAt: serverTimestamp()
+        });
+        return { hasRefreshToken: true, isConnected: true };
+      }
+      
+      return { 
+        hasRefreshToken, 
+        isConnected: userData.googleProviderConnected || false 
+      };
+    }
+    
+    return { hasRefreshToken: false, isConnected: false };
+  } catch (error) {
+    console.error("Error checking Google provider connection status:", error);
+    return { hasRefreshToken: false, isConnected: false };
+  }
+}
+
 export { 
   auth, 
   signInWithEmailAndPassword, 

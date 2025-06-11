@@ -11,7 +11,7 @@ import {
 import type { LinksFunction, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { cn } from "~/lib/utils";
-import { auth, isAuthenticated, db } from "~/lib/firebase";
+import { auth, isAuthenticated, db, checkAndMarkGoogleProviderConnected } from "~/lib/firebase";
 import { 
   collection, 
   query, 
@@ -68,6 +68,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
       return redirect("/sign-in");
     }
 
+    // Check if user has Google refresh token and mark provider as connected
+    let googleProviderStatus = { hasRefreshToken: false, isConnected: false };
+    try {
+      if (currentUser.email) {
+        googleProviderStatus = await checkAndMarkGoogleProviderConnected(currentUser.email);
+      }
+    } catch (error) {
+      console.error("Error checking Google provider status:", error);
+      // Continue without Google provider status
+    }
+
     // Try to get company name from Firestore
     let companyName = "";
     try {
@@ -89,7 +100,8 @@ export async function loader({ request }: LoaderFunctionArgs) {
         uid: currentUser.uid,
         emailVerified: currentUser.emailVerified,
         companyName: companyName
-      } 
+      },
+      googleProviderStatus
     });
   } catch (error) {
     console.error("Auth error in root loader:", error);

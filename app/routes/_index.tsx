@@ -91,7 +91,16 @@ export const loader: LoaderFunction = async ({ request }) => {
     const googleValidation = await validateGoogleCredentials(request);
     const googleCredentialsValid = googleValidation.isValid;
     
-
+    // Check if user has Google refresh token in database
+    const { getCurrentUser } = await import("~/lib/firebase");
+    const currentUser = await getCurrentUser();
+    let hasGoogleRefreshToken = false;
+    
+    if (currentUser?.email) {
+      const { getGoogleRefreshToken } = await import("~/lib/firebase");
+      const refreshToken = await getGoogleRefreshToken(currentUser.email);
+      hasGoogleRefreshToken = !!refreshToken;
+    }
     
     // Make parallel requests to both AWS and Google APIs
     const [awsResponse, googleResponse] = await Promise.all([
@@ -100,19 +109,27 @@ export const loader: LoaderFunction = async ({ request }) => {
           Cookie: cookieHeader || "",
         },
       }),
-      // Only fetch Google data if credentials are valid
-      googleCredentialsValid 
-        ? fetch(`${baseUrl}/api/google-users`, {
+      // Try auto-fetch first if user has refresh token, otherwise use session credentials
+      hasGoogleRefreshToken 
+        ? fetch(`${baseUrl}/api/google-users-auto`, {
             headers: {
               Cookie: cookieHeader || "",
             },
           })
-        : Promise.resolve(new Response(JSON.stringify({ users: [], credentials: null }), { status: 200 }))
+        : googleCredentialsValid 
+          ? fetch(`${baseUrl}/api/google-users`, {
+              headers: {
+                Cookie: cookieHeader || "",
+              },
+            })
+          : Promise.resolve(new Response(JSON.stringify({ users: [], credentials: null }), { status: 200 }))
     ]);
     
     const awsData = await awsResponse.json();
     const googleData = await googleResponse.json();
 
+    // Determine if Google is connected based on the response
+    const googleConnected = hasGoogleRefreshToken && googleData.success || googleCredentialsValid;
     
     // Transform Google users to match AWS user format
     const transformedGoogleUsers = (googleData.users || []).map((user: any) => ({
@@ -160,13 +177,14 @@ export const loader: LoaderFunction = async ({ request }) => {
     return json({ 
       credentials: {
         aws: awsData.credentials,
-        google: googleCredentialsValid ? googleData.credentials : null
+        google: googleConnected ? { connected: true, autoConnected: hasGoogleRefreshToken } : null
       },
       users: combinedUsers,
       roles: combinedRoles,
       scoreHistory,
-      error: awsData.error || (googleCredentialsValid ? googleData.error : null) || null,
-      googleCredentialsValid
+      error: awsData.error || (googleConnected ? googleData.error : null) || null,
+      googleCredentialsValid: googleConnected,
+      hasGoogleRefreshToken
     });
   } catch (error) {
     console.error("Error fetching IAM data:", error);
@@ -179,13 +197,14 @@ export const loader: LoaderFunction = async ({ request }) => {
       roles: [],
       scoreHistory: [],
       error: "Failed to fetch IAM data. Please check your credentials.",
-      googleCredentialsValid: false
+      googleCredentialsValid: false,
+      hasGoogleRefreshToken: false
     });
   }
 };
 
 const Index = () => {
-  const { credentials, users, roles, scoreHistory, error, googleCredentialsValid } = useLoaderData<typeof loader>();
+  const { credentials, users, roles, scoreHistory, error, googleCredentialsValid, hasGoogleRefreshToken } = useLoaderData<typeof loader>();
 
   // Calculate shadow permissions for all entities and deduplicate them
   const shadowPermissions: ShadowPermissionRisk[] = (credentials.aws || (googleCredentialsValid && !!credentials.google)) ? [
@@ -230,11 +249,24 @@ const Index = () => {
           <div className="mt-4 bg-blue-900/20 border border-blue-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 text-blue-400">
               <CheckCircle className="w-5 h-5" />
-              <span>Connected to Google Workspace. AWS credentials not required.</span>
+              <span>
+                {credentials.google.autoConnected 
+                  ? "Automatically connected to Google Workspace using saved credentials. AWS credentials not required."
+                  : "Connected to Google Workspace. AWS credentials not required."
+                }
+              </span>
             </div>
           </div>
         )}
-        {!googleCredentialsValid && credentials.google && (
+        {hasGoogleRefreshToken && !googleCredentialsValid && (
+          <div className="mt-4 bg-orange-900/20 border border-orange-500/20 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-orange-400">
+              <AlertCircle className="w-5 h-5" />
+              <span>Google refresh token found but failed to connect. Please reconnect your Google account in the Providers page.</span>
+            </div>
+          </div>
+        )}
+        {!googleCredentialsValid && credentials.google && !hasGoogleRefreshToken && (
           <div className="mt-4 bg-red-900/20 border border-red-500/20 rounded-xl p-4">
             <div className="flex items-center gap-2 text-red-400">
               <AlertCircle className="w-5 h-5" />
