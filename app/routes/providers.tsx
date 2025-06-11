@@ -393,8 +393,6 @@ export default function ProvidersPage() {
   const navigation = useNavigation();
   const [selectedProvider, setSelectedProvider] = useState<"aws" | "azure" | "okta" | "google">("aws");
   const [showModal, setShowModal] = useState(false);
-  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
-  const [providerToDisconnect, setProviderToDisconnect] = useState<string>("");
   const [googleError, setGoogleError] = useState<string | null>(null);
 
   // Check if Google is actually connected (has valid credentials or valid refresh token)
@@ -411,19 +409,9 @@ export default function ProvidersPage() {
   };
 
   const handleDisconnect = async () => {
-    setProviderToDisconnect(selectedProvider);
-    setShowDisconnectConfirm(true);
-  };
-
-  const handleGoogleDisconnect = async () => {
-    setProviderToDisconnect("google");
-    setShowDisconnectConfirm(true);
-  };
-
-  const confirmDisconnect = async () => {
     const formData = new FormData();
     formData.append("intent", "disconnect");
-    formData.append("provider", providerToDisconnect);
+    formData.append("provider", selectedProvider);
     
     try {
       const response = await fetch("/providers", {
@@ -435,17 +423,32 @@ export default function ProvidersPage() {
         throw new Error("Failed to disconnect provider");
       }
       
-      setShowDisconnectConfirm(false);
-      setProviderToDisconnect("");
+      setShowModal(false);
       window.location.reload();
     } catch (error) {
       console.error("Error disconnecting provider:", error);
     }
   };
 
-  const cancelDisconnect = () => {
-    setShowDisconnectConfirm(false);
-    setProviderToDisconnect("");
+  const handleGoogleDisconnect = async () => {
+    const formData = new FormData();
+    formData.append("intent", "disconnect");
+    formData.append("provider", "google");
+    
+    try {
+      const response = await fetch("/providers", {
+        method: "POST",
+        body: formData,
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to disconnect Google account");
+      }
+      
+      window.location.reload();
+    } catch (error) {
+      console.error("Error disconnecting Google:", error);
+    }
   };
 
   const handleClose = () => {
@@ -616,46 +619,6 @@ export default function ProvidersPage() {
               onDisconnect={handleDisconnect}
             />
           )}
-        </Modal>
-
-        {/* Disconnect Confirmation Modal */}
-        <Modal
-          isOpen={showDisconnectConfirm}
-          onClose={cancelDisconnect}
-          title={`Disconnect ${providerToDisconnect.toUpperCase()} Provider`}
-        >
-          <div className="space-y-4">
-            <div className="text-gray-300">
-              {providerToDisconnect === "google" ? (
-                <div>
-                  <p className="mb-3">Are you sure you want to disconnect Google Workspace?</p>
-                  <div className="bg-yellow-900/20 border border-yellow-500/20 rounded-lg p-3">
-                    <p className="text-yellow-400 text-sm">
-                      <strong>Warning:</strong> This will permanently remove your Google refresh token from the database. 
-                      You will need to re-authenticate with Google to reconnect in the future.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <p>Are you sure you want to disconnect the {providerToDisconnect.toUpperCase()} provider?</p>
-              )}
-            </div>
-            
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={cancelDisconnect}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmDisconnect}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-              >
-                Disconnect
-              </button>
-            </div>
-          </div>
         </Modal>
       </div>
     </GoogleOAuthProvider>
