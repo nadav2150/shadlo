@@ -51,18 +51,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
   try {
     // Get the current user directly from auth
     const currentUser = auth.currentUser;
-    console.log("Root loader - Current user:", currentUser ? {
-      email: currentUser.email,
-      emailVerified: currentUser.emailVerified,
-      uid: currentUser.uid
-    } : "No current user");
 
     // Also check authentication state
     const isUserAuthenticated = await isAuthenticated();
-    console.log("Root loader - Is user authenticated:", isUserAuthenticated);
 
     if (!isUserAuthenticated || !currentUser) {
-      console.log("User not authenticated or no current user, redirecting to sign-in");
       if (pathname !== '/sign-in') {
         const searchParams = new URLSearchParams([["redirectTo", pathname]]);
         return redirect(`/sign-in?${searchParams.toString()}`);
@@ -72,7 +65,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
 
     // Verify email if required
     if (!currentUser.emailVerified) {
-      console.log("User email not verified, redirecting to sign-in");
       return redirect("/sign-in");
     }
 
@@ -88,7 +80,6 @@ export async function loader({ request }: LoaderFunctionArgs) {
         companyName = userDoc.companyName || "";
       }
     } catch (firestoreError) {
-      console.error("Error loading company name from Firestore:", firestoreError);
       // Continue without company name if Firestore fails
     }
 
