@@ -176,7 +176,6 @@ export const action: ActionFunction = async ({ request }) => {
       // User exists, update their settings
       const userDoc = querySnapshot.docs[0];
       await updateDoc(doc(db, "clients", userDoc.id), settingsData);
-      console.log("Updated client settings for:", currentUser.email);
     } else {
       // User doesn't exist, create new document with settings
       const newClientData = {
@@ -187,7 +186,6 @@ export const action: ActionFunction = async ({ request }) => {
       };
 
       const docRef = await addDoc(collection(db, "clients"), newClientData);
-      console.log("Created new client document with settings, ID:", docRef.id);
     }
     
     return json({

@@ -166,10 +166,8 @@ export const loader: LoaderFunction = async ({ request }) => {
       if (awsResponse.ok) {
         awsData = await awsResponse.json();
       } else {
-        console.log("AWS not connected or error:", await awsResponse.text());
       }
     } catch (error) {
-      console.log("Error fetching AWS data:", error);
       // Continue without AWS data
     }
 
@@ -177,11 +175,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     const googleValidation = await validateGoogleCredentials(request);
     googleCredentialsValid = googleValidation.isValid;
     
-    console.log("Debug - Google validation result:", {
-      isValid: googleValidation.isValid,
-      error: googleValidation.error
-    });
-    
+
     if (googleValidation.isValid) {
       // Try to fetch Google data only if credentials are valid
       try {
@@ -193,9 +187,7 @@ export const loader: LoaderFunction = async ({ request }) => {
         
         if (googleResponse.ok) {
           const googleData = await googleResponse.json();
-          console.log("Debug - Google API response successful:", {
-            userCount: googleData.users?.length
-          });
+
           
           // Transform Google users to match the common interface
           googleUsers = googleData.users?.map((user: GoogleApiUser) => {
@@ -230,24 +222,14 @@ export const loader: LoaderFunction = async ({ request }) => {
           }) || [];
         } else {
           const errorText = await googleResponse.text();
-          console.log("Google API error:", errorText);
           googleCredentialsValid = false; // Mark as invalid if API call fails
         }
       } catch (error) {
-        console.log("Error fetching Google users:", error);
         googleCredentialsValid = false; // Mark as invalid if fetch fails
       }
     } else {
-      console.log("Google credentials validation failed:", googleValidation.error);
     }
     
-    console.log("Debug - API Response:", { 
-      hasAwsCredentials: !!awsData.credentials,
-      awsUserCount: awsData.users?.length,
-      awsRoleCount: awsData.roles?.length,
-      googleUserCount: googleUsers.length,
-      googleCredentialsValid
-    });
     
     // Combine AWS and Google users
     const allUsers = [

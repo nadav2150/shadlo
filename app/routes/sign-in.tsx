@@ -40,7 +40,7 @@ export async function action({ request }: ActionFunctionArgs) {
   const url = new URL(request.url);
   const redirectTo = url.searchParams.get("redirectTo") || "/";
 
-  console.log("Sign in attempt for email:", email);
+
 
   // Handle resend verification email
   if (intent === "resendVerification") {
@@ -90,24 +90,16 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     // Sign in with Firebase
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    console.log("Sign in successful for:", {
-      email: userCredential.user.email,
-      emailVerified: userCredential.user.emailVerified,
-      uid: userCredential.user.uid
-    });
 
     // Save client sign-in data to Firestore
     try {
       await saveClientSignInData(email);
-      console.log("Client sign-in data saved to Firestore");
     } catch (firestoreError) {
-      console.error("Failed to save client sign-in data:", firestoreError);
       // Don't fail the sign-in if Firestore save fails
     }
 
     // Verify the sign-in was successful
     const isUserAuthenticated = await isAuthenticated();
-    console.log("Is user authenticated:", isUserAuthenticated);
 
     if (!isUserAuthenticated) {
       throw new Error("Authentication failed after sign in");
@@ -115,15 +107,9 @@ export async function action({ request }: ActionFunctionArgs) {
 
     // Check if the user is actually verified
     const currentUser = auth.currentUser;
-    console.log("Current user after sign in:", currentUser ? {
-      email: currentUser.email,
-      emailVerified: currentUser.emailVerified,
-      uid: currentUser.uid
-    } : "No current user");
 
     // Only check email verification if the user exists and is not verified
     if (currentUser && !currentUser.emailVerified) {
-      console.log("User email not verified, signing out");
       await auth.signOut();
       const newLocal = "Please verify your email before signing in. Check your inbox for the verification link.";
       return json<ActionData>({
@@ -134,7 +120,6 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     // If we get here, either the user is verified or we don't need to check
-    console.log("Sign in successful, redirecting to:", redirectTo);
     return redirect(redirectTo);
   } catch (error: any) {
     console.error("Sign in error:", error);
@@ -211,20 +196,14 @@ export default function SignIn() {
     let mounted = true;
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log("Auth state changed:", user ? {
-        email: user.email,
-        emailVerified: user.emailVerified,
-        uid: user.uid
-      } : "No user");
+
 
       if (mounted && user && !isRedirecting) {
         // Only redirect if the user is verified or if we don't need to check verification
         if (user.emailVerified) {
-          console.log("User is verified, redirecting to:", redirectTo);
           setIsRedirecting(true);
           navigate(redirectTo);
         } else {
-          console.log("User is not verified, staying on sign-in page");
         }
       }
     });

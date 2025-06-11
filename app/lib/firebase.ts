@@ -41,26 +41,16 @@ const db = getFirestore(app);
 const initAuth = async () => {
   try {
     await setPersistence(auth, browserLocalPersistence);
-    console.log("Firebase auth persistence initialized successfully");
     
     // Check current user after persistence is set
     const currentUser = auth.currentUser;
-    console.log("Current user after persistence init:", currentUser ? {
-      email: currentUser.email,
-      emailVerified: currentUser.emailVerified,
-      uid: currentUser.uid
-    } : "No current user");
 
     // Set up auth state listener
     onAuthStateChanged(auth, (user) => {
-      console.log("Auth state changed after persistence init:", user ? {
-        email: user.email,
-        emailVerified: user.emailVerified,
-        uid: user.uid
-      } : "No user");
+
     });
   } catch (error) {
-    console.error("Error initializing Firebase auth persistence:", error);
+
   }
 };
 
@@ -80,11 +70,6 @@ export async function getCurrentUser(): Promise<User | null> {
 // Helper function to check if user is authenticated
 export async function isAuthenticated(): Promise<boolean> {
   const user = await getCurrentUser();
-  console.log("isAuthenticated check:", user ? {
-    email: user.email,
-    emailVerified: user.emailVerified,
-    uid: user.uid
-  } : "No user");
   return !!user;
 }
 
@@ -102,7 +87,6 @@ export async function saveClientSignInData(email: string): Promise<void> {
       await updateDoc(doc(db, "clients", userDoc.id), {
         lastSignInAt: serverTimestamp()
       });
-      console.log("Updated existing client sign-in data for:", email);
     } else {
       // User doesn't exist, create new document with default settings
       // Calculate sendOnEmailDate based on default report frequency (weekly = 7 days)
@@ -134,10 +118,8 @@ export async function saveClientSignInData(email: string): Promise<void> {
       };
 
       const docRef = await addDoc(collection(db, "clients"), clientData);
-      console.log("Created new client document with default settings, ID:", docRef.id);
     }
   } catch (error) {
-    console.error("Error saving client sign-in data:", error);
     throw error;
   }
 }
@@ -157,7 +139,6 @@ export async function saveGoogleRefreshToken(email: string, refreshToken: string
         googleRefreshToken: refreshToken,
         googleTokenUpdatedAt: serverTimestamp()
       });
-      console.log("Updated Google refresh token for client:", email);
     } else {
       // User doesn't exist, create new document with Google token
       const clientData = {
@@ -176,10 +157,8 @@ export async function saveGoogleRefreshToken(email: string, refreshToken: string
       };
 
       const docRef = await addDoc(collection(db, "clients"), clientData);
-      console.log("Created new client document with Google refresh token, ID:", docRef.id);
     }
   } catch (error) {
-    console.error("Error saving Google refresh token to Firestore:", error);
     throw error;
   }
 }

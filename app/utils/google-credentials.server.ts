@@ -6,13 +6,7 @@ export async function validateGoogleCredentials(request: Request): Promise<{ isV
   try {
     const googleCredentials = await getGoogleCredentials(request);
     
-    console.log("Debug - Google credentials validation:", {
-      hasCredentials: !!googleCredentials,
-      hasAccessToken: !!googleCredentials?.access_token,
-      hasRefreshToken: !!googleCredentials?.refresh_token,
-      tokenLength: googleCredentials?.access_token?.length,
-      expiresAt: googleCredentials?.expires_at
-    });
+
     
     if (!googleCredentials?.access_token) {
       return { isValid: false, error: "No Google credentials found" };
@@ -22,15 +16,12 @@ export async function validateGoogleCredentials(request: Request): Promise<{ isV
     const isExpired = googleCredentials.expires_at && googleCredentials.expires_at < Math.floor(Date.now() / 1000);
     
     if (isExpired && googleCredentials.refresh_token) {
-      console.log("Access token expired, attempting to refresh...");
       const refreshResult = await refreshGoogleAccessToken(request);
       
       if (!refreshResult.success) {
-        console.log("Failed to refresh access token:", refreshResult.error);
         return { isValid: false, error: refreshResult.error || "Failed to refresh access token" };
       }
       
-      console.log("Successfully refreshed access token");
       // Get the updated credentials after refresh
       const updatedCredentials = await getGoogleCredentials(request);
       if (!updatedCredentials?.access_token) {
@@ -60,10 +51,7 @@ export async function validateGoogleCredentials(request: Request): Promise<{ isV
       orderBy: 'email'
     });
 
-    console.log("Debug - Google API test successful:", {
-      hasUsers: !!testResponse.data.users,
-      userCount: testResponse.data.users?.length
-    });
+
 
     return { isValid: true };
   } catch (error: any) {
@@ -71,27 +59,22 @@ export async function validateGoogleCredentials(request: Request): Promise<{ isV
     
     // Check for specific error types
     if (error.response?.status === 401) {
-      console.log("Google credentials validation: Invalid or expired access token");
       return { isValid: false, error: "Invalid or expired access token" };
     }
     
     if (error.response?.status === 403) {
-      console.log("Google credentials validation: Insufficient permissions for Google Admin API");
       return { isValid: false, error: "Insufficient permissions for Google Admin API" };
     }
     
     if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
-      console.log("Google credentials validation: Network error connecting to Google API");
       return { isValid: false, error: "Network error connecting to Google API" };
     }
     
     // Handle token expired errors
     if (error.message?.includes('invalid_grant') || error.message?.includes('expired')) {
-      console.log("Google credentials validation: Token expired");
       return { isValid: false, error: "Access token has expired" };
     }
     
-    console.log("Google credentials validation: Unknown error:", error.message);
     return { isValid: false, error: error.message || "Unknown error validating credentials" };
   }
 } 

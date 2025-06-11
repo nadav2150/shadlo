@@ -59,7 +59,6 @@ export async function refreshGoogleAccessToken(
     
     if (!refreshToken && currentCredentials?.authuser) {
       // If no refresh token in session, try to get it from Firestore
-      console.log("No refresh token in session, trying to get from Firestore...");
       const firestoreRefreshToken = await getGoogleRefreshToken(currentCredentials.authuser);
       if (firestoreRefreshToken) {
         refreshToken = firestoreRefreshToken;

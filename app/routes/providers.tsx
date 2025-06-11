@@ -31,11 +31,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     const validation = await validateGoogleCredentials(request);
     googleCredentialsValid = validation.isValid;
     
-    console.log("Debug - Providers page Google validation:", {
-      hasCredentials: !!googleCredentials,
-      isValid: validation.isValid,
-      error: validation.error
-    });
+
   }
   
   return json({
@@ -403,14 +399,12 @@ export default function ProvidersPage() {
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     try {
-      console.log("Google login successful:", credentialResponse);
       
       // Check if we have the authorization code
       if (!credentialResponse.code) {
         throw new Error("No authorization code received from Google");
       }
 
-      console.log("Authorization code received:", credentialResponse.code.substring(0, 10) + "...");
       
       // Send the authorization code to server
       const formData = new FormData();
@@ -424,7 +418,6 @@ export default function ProvidersPage() {
         formData.append("scope", credentialResponse.scope);
       }
 
-      console.log("Sending authorization code to backend...");
       const response = await fetch("/api/google/auth", {
         method: "POST",
         body: formData,
@@ -432,7 +425,6 @@ export default function ProvidersPage() {
 
       const data = await response.json();
       
-      console.log("Backend response:", data);
       
       if (!response.ok) {
         throw new Error(data.details || data.error || "Failed to process credentials");
@@ -443,13 +435,7 @@ export default function ProvidersPage() {
       }
 
       setGoogleError(null);
-      
-      // Show success message
-      if (data.hasRefreshToken) {
-        console.log("✅ Successfully connected Google account with refresh token!");
-      } else {
-        console.log("⚠️ Connected Google account but no refresh token received");
-      }
+    
       
       window.location.reload();
     } catch (error) {

@@ -48,8 +48,7 @@ export const action: ActionFunction = async ({ request }) => {
       redirectUri
     );
 
-    // Exchange authorization code for tokens
-    console.log("Exchanging authorization code for tokens...");
+
     
     // Manually construct the token request to avoid PKCE issues
     const tokenUrl = 'https://oauth2.googleapis.com/token';
@@ -81,12 +80,7 @@ export const action: ActionFunction = async ({ request }) => {
       throw new Error("Failed to obtain access token from Google");
     }
 
-    console.log("Successfully obtained tokens from Google:", {
-      hasAccessToken: !!tokens.access_token,
-      hasRefreshToken: !!tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      scope: tokens.scope
-    });
+
 
     // Set credentials for API calls using the Google OAuth2 client
     oauth2Client.setCredentials({
@@ -140,13 +134,7 @@ export const action: ActionFunction = async ({ request }) => {
     // Store credentials in session
     const cookieHeader = await setGoogleCredentials(request, credentials);
 
-    // Log success (without sensitive data)
-    console.log(`Successfully fetched ${users.length} users from Google Workspace`);
-    console.log("Token exchange successful:", {
-      hasRefreshToken: !!tokens.refresh_token,
-      expiresIn: tokens.expires_in,
-      expiresAt: expiresAt
-    });
+
 
     // Save refresh token to Firestore
     const user = await getCurrentUser();
@@ -154,10 +142,8 @@ export const action: ActionFunction = async ({ request }) => {
     if (user?.email && tokens.refresh_token) {
       try {
         await saveGoogleRefreshToken(user.email, tokens.refresh_token);
-        console.log("Successfully saved Google refresh token to Firestore for:", user.email);
         firestoreSaved = true;
       } catch (firestoreError) {
-        console.error("Failed to save Google refresh token to Firestore:", firestoreError);
         // Don't fail the entire operation if Firestore save fails
       }
     } else {

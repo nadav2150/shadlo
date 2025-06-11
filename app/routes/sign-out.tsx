@@ -16,26 +16,17 @@ async function handleSignOut(request: Request) {
   try {
     // Get current user before signing out
     const currentUser = auth.currentUser;
-    console.log("Signing out user:", currentUser?.email);
 
     // Sign out from Firebase
     await signOut(auth);
-    console.log("Firebase sign out successful");
-
-    // Clear all provider credentials
-    console.log("Clearing all provider credentials...");
     
     // Clear AWS credentials
     const awsCookieHeader = await clearAwsCredentials(request);
-    console.log("AWS credentials cleared");
-    
     // Clear Google credentials
     const googleCookieHeader = await clearGoogleCredentials(request);
-    console.log("Google credentials cleared");
     
     // Clear GSuite credentials (legacy)
     const gsuiteCookieHeader = await clearGSuiteCredentials(request);
-    console.log("GSuite credentials cleared");
 
     // Create headers with cookies
     const headers = new Headers();
@@ -68,8 +59,6 @@ async function handleSignOut(request: Request) {
     headers.append("Cache-Control", "no-cache, no-store, must-revalidate");
     headers.append("Pragma", "no-cache");
     headers.append("Expires", "0");
-
-    console.log("All credentials and sessions cleared successfully");
 
     // Return redirect with headers
     return redirect("/sign-in", { 

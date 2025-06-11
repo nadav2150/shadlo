@@ -26,9 +26,7 @@ export async function loader({ request }: { request: Request }) {
       },
     });
 
-    console.log('Fetching IAM users...');
     const users = await getIAMUsers(iamClient);
-    console.log(`Found ${users.length} IAM users`);
 
     // Calculate risk assessment for each user
     const usersWithRiskAssessment = users.map(user => ({
@@ -36,10 +34,8 @@ export async function loader({ request }: { request: Request }) {
       riskAssessment: calculateRiskScore(user)
     }));
 
-    console.log('Returning users with risk assessment');
     return json({ users: usersWithRiskAssessment });
   } catch (error) {
-    console.error('Error fetching IAM users:', error);
     return json({ 
       status: "error",
       message: "Failed to fetch IAM users. Please check your AWS credentials in Settings.",

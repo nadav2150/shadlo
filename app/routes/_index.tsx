@@ -91,10 +91,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     const googleValidation = await validateGoogleCredentials(request);
     const googleCredentialsValid = googleValidation.isValid;
     
-    console.log("Debug - Index route Google validation:", {
-      isValid: googleValidation.isValid,
-      error: googleValidation.error
-    });
+
     
     // Make parallel requests to both AWS and Google APIs
     const [awsResponse, googleResponse] = await Promise.all([
@@ -115,14 +112,7 @@ export const loader: LoaderFunction = async ({ request }) => {
     
     const awsData = await awsResponse.json();
     const googleData = await googleResponse.json();
-    
-    console.log("Debug - Raw API Responses:", {
-      awsData,
-      googleData,
-      hasGoogleUsers: !!googleData.users?.length,
-      googleUserCount: googleData.users?.length,
-      googleCredentialsValid
-    });
+
     
     // Transform Google users to match AWS user format
     const transformedGoogleUsers = (googleData.users || []).map((user: any) => ({
@@ -145,10 +135,7 @@ export const loader: LoaderFunction = async ({ request }) => {
       }
     }));
     
-    console.log("Debug - Transformed Google Users:", {
-      transformedCount: transformedGoogleUsers.length,
-      sampleUser: transformedGoogleUsers[0]
-    });
+
     
     // Combine users and roles from both services
     const combinedUsers = [
@@ -156,11 +143,7 @@ export const loader: LoaderFunction = async ({ request }) => {
       ...transformedGoogleUsers
     ];
     
-    console.log("Debug - Combined Users:", {
-      totalCount: combinedUsers.length,
-      awsCount: awsData.users?.length || 0,
-      googleCount: transformedGoogleUsers.length
-    });
+
 
     const combinedRoles = [
       ...(awsData.roles || []),
@@ -218,10 +201,7 @@ const Index = () => {
       )
     ) : [];
 
-  const handleConnect = (service: string) => {
-    console.log(`Connecting to ${service}...`);
-    // TODO: Implement connection logic
-  };
+
 
   const connectedServices = {
     AWS: !!credentials.aws?.accessKeyId,
