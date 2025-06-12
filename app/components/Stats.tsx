@@ -2,6 +2,7 @@ import { useLoaderData } from "@remix-run/react";
 import type { UserDetails, RoleDetails, ShadowPermissionRisk } from "~/lib/iam/types";
 import { calculateSecurityScore } from "~/lib/security/scoreEngine";
 import { useState } from "react";
+import { AlertTriangle, AlertCircle, Shield, CheckCircle } from "lucide-react";
 
 interface StatsProps {
   users: UserDetails[];
@@ -30,6 +31,79 @@ function getRiskScore(riskLevel: string): number {
   }
 }
 
+// Circular Progress Component
+function CircularProgress({ percentage, color, size = 60 }: { percentage: number; color: string; size?: number }) {
+  const radius = (size - 4) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDasharray = circumference;
+  const strokeDashoffset = circumference - (percentage / 100) * circumference;
+
+  return (
+    <div className="relative inline-flex items-center justify-center">
+      <svg width={size} height={size} className="transform -rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="currentColor"
+          strokeWidth="2"
+          fill="transparent"
+          className="text-gray-800"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="currentColor"
+          strokeWidth="2"
+          fill="transparent"
+          strokeDasharray={strokeDasharray}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          className={`transition-all duration-300 ${color}`}
+        />
+      </svg>
+      <span className="absolute text-xs font-medium text-white">
+        {Math.round(percentage)}%
+      </span>
+    </div>
+  );
+}
+
+// Circular Progress Risk Distribution Component
+function CircularProgressRiskDistribution({ data }: { 
+  data: Array<{ 
+    level: string; 
+    count: number; 
+    percentage: number; 
+    color: string; 
+    bgColor: string; 
+    icon: any;
+  }>;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      {data.map(({ level, count, percentage, color, bgColor, icon: Icon }) => (
+        <div key={level} className={`${bgColor} rounded-lg p-3 text-center`}>
+          <div className="flex justify-center mb-2">
+            <CircularProgress 
+              percentage={percentage} 
+              color={color} 
+              size={50}
+            />
+          </div>
+          <div className={`text-xs font-medium ${color} mb-1`}>
+            {level.charAt(0).toUpperCase() + level.slice(1)}
+          </div>
+          <div className="text-xs text-white">
+            {count} entities
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Stats({ users, roles, shadowPermissions, hasCredentials }: StatsProps) {
   const { overallScore, riskLevel, factors } = hasCredentials ? calculateSecurityScore(users, roles) : {
     overallScore: 0,
@@ -54,6 +128,46 @@ export function Stats({ users, roles, shadowPermissions, hasCredentials }: Stats
   // Calculate total entities and create combined array
   const allEntities = [...users, ...roles];
   const totalEntities = allEntities.length;
+
+  // Calculate risk distribution with circular progress approach
+  const riskDistribution = hasCredentials ? [
+    { 
+      level: 'critical', 
+      color: 'text-red-400', 
+      bgColor: 'bg-red-500/10', 
+      icon: AlertTriangle 
+    },
+    { 
+      level: 'high', 
+      color: 'text-orange-400', 
+      bgColor: 'bg-orange-500/10', 
+      icon: AlertCircle 
+    },
+    { 
+      level: 'medium', 
+      color: 'text-yellow-400', 
+      bgColor: 'bg-yellow-500/10', 
+      icon: Shield 
+    },
+    { 
+      level: 'low', 
+      color: 'text-green-400', 
+      bgColor: 'bg-green-500/10', 
+      icon: CheckCircle 
+    }
+  ].map(({ level, color, bgColor, icon }) => {
+    const count = allEntities.filter(e => e.riskAssessment?.riskLevel === level).length;
+    const percentage = totalEntities > 0 ? (count / totalEntities) * 100 : 0;
+    
+    return {
+      level,
+      count,
+      percentage,
+      color,
+      bgColor,
+      icon
+    };
+  }) : [];
   
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -79,39 +193,17 @@ export function Stats({ users, roles, shadowPermissions, hasCredentials }: Stats
       </div>
       
       <div className="bg-white/5 border border-gray-800 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center justify-between mb-4">
           <span className="text-sm text-gray-400">Risk Distribution</span>
+          {hasCredentials && (
+            <span className="text-xs text-gray-500">
+              {totalEntities} total
+            </span>
+          )}
         </div>
         
         {hasCredentials ? (
-          <div className="space-y-1.5">
-            {[
-              { level: 'critical', color: 'bg-red-500/10', textColor: 'text-red-400', borderColor: 'border-red-500/20' },
-              { level: 'high', color: 'bg-orange-500/10', textColor: 'text-orange-400', borderColor: 'border-orange-500/20' },
-              { level: 'medium', color: 'bg-yellow-500/10', textColor: 'text-yellow-400', borderColor: 'border-yellow-500/20' },
-              { level: 'low', color: 'bg-green-500/10', textColor: 'text-green-400', borderColor: 'border-green-500/20' }
-            ].map(({ level, color, textColor, borderColor }) => {
-              const count = allEntities.filter(e => e.riskAssessment?.riskLevel === level).length;
-              const percentage = totalEntities > 0 ? (count / totalEntities) * 100 : 0;
-              
-              return (
-                <div key={level} className={`px-2 py-1 rounded-lg border ${borderColor} ${color}`}>
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className={`text-xs font-medium ${textColor}`}>
-                      {level.charAt(0).toUpperCase() + level.slice(1)}
-                    </span>
-                    <span className="text-xs text-white">{count}</span>
-                  </div>
-                  <div className="w-full bg-gray-800 rounded-full h-1">
-                    <div 
-                      className={`h-1 rounded-full ${color.replace('/10', '')}`}
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          <CircularProgressRiskDistribution data={riskDistribution} />
         ) : (
           <div className="text-center text-xs text-gray-400">
             Connect a provider to view risk distribution
