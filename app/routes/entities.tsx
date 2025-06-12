@@ -22,6 +22,11 @@ interface AccessKey {
   status: 'Active' | 'Inactive';
 }
 
+interface Tag {
+  Key: string;
+  Value: string;
+}
+
 interface IAMUser {
   userName: string;
   createDate: string;
@@ -31,6 +36,7 @@ interface IAMUser {
   accessKeys?: AccessKey[];
   provider: 'aws' | 'azure' | 'gcp';
   type: 'user';
+  tags?: Tag[];
   riskAssessment?: {
     riskLevel: 'low' | 'medium' | 'high';
     score: number;
@@ -86,6 +92,7 @@ interface GoogleUser {
   policies: Policy[];
   hasMFA: boolean;
   suspended?: boolean;
+  tags?: Tag[];
   riskAssessment?: {
     riskLevel: 'low' | 'medium' | 'high' | 'critical';
     score: number;
@@ -112,6 +119,7 @@ interface IAMRole {
   type: 'role';
   description?: string;
   trustPolicy?: string;
+  tags?: Tag[];
   riskAssessment?: {
     riskLevel: 'low' | 'medium' | 'high';
     score: number;
@@ -1260,27 +1268,43 @@ export default function Entities() {
 
                           return (
                             <tr key={entityId} className="hover:bg-white/5">
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="flex items-center gap-2">
-                                  {entity.type === 'user' ? (
-                                    <User className="w-5 h-5 text-gray-400" />
-                                  ) : (
-                                    <Shield className="w-5 h-5 text-gray-400" />
+                              <td className="px-4 py-3">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                    {entity.type === 'user' ? (
+                                      <User className="w-5 h-5 text-gray-400" />
+                                    ) : (
+                                      <Shield className="w-5 h-5 text-gray-400" />
+                                    )}
+                                    <a 
+                                      href={entity.provider === 'google' 
+                                        ? 'https://admin.google.com/ac/users'
+                                        : entity.type === 'role'
+                                          ? `https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/roles/${entityName}`
+                                          : `https://console.aws.amazon.com/iam/home?region=us-east-1#/users/${entityName}`
+                                      }
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-medium text-white hover:text-blue-400 flex items-center gap-1"
+                                    >
+                                      {entityName}
+                                      <ExternalLink className="w-4 h-4" />
+                                    </a>
+                                  </div>
+                                  
+                                  {/* Tags Display */}
+                                  {entity.tags && entity.tags.length > 0 && (
+                                    <div className="flex flex-wrap gap-1 ml-7">
+                                      {entity.tags.map((tag, index) => (
+                                        <span
+                                          key={index}
+                                          className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-900/30 text-blue-300 border border-blue-700/30"
+                                        >
+                                          {tag.Key}: {tag.Value}
+                                        </span>
+                                      ))}
+                                    </div>
                                   )}
-                                  <a 
-                                    href={entity.provider === 'google' 
-                                      ? 'https://admin.google.com/ac/users'
-                                      : entity.type === 'role'
-                                        ? `https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/roles/${entityName}`
-                                        : `https://console.aws.amazon.com/iam/home?region=us-east-1#/users/${entityName}`
-                                    }
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="font-medium text-white hover:text-blue-400 flex items-center gap-1"
-                                  >
-                                    {entityName}
-                                    <ExternalLink className="w-4 h-4" />
-                                  </a>
                                 </div>
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">

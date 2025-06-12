@@ -1,5 +1,5 @@
-import { IAMClient, ListUsersCommand, ListUserPoliciesCommand, ListAttachedUserPoliciesCommand, ListAccessKeysCommand, ListMFADevicesCommand, ListRolesCommand, ListRolePoliciesCommand, ListAttachedRolePoliciesCommand, AttachedPolicy, AccessKeyMetadata, GetAccessKeyLastUsedCommand } from '@aws-sdk/client-iam';
-import { UserDetails, Policy, AccessKey, RoleDetails } from './types';
+import { IAMClient, ListUsersCommand, ListUserPoliciesCommand, ListAttachedUserPoliciesCommand, ListAccessKeysCommand, ListMFADevicesCommand, ListRolesCommand, ListRolePoliciesCommand, ListAttachedRolePoliciesCommand, AttachedPolicy, AccessKeyMetadata, GetAccessKeyLastUsedCommand, ListUserTagsCommand, ListRoleTagsCommand } from '@aws-sdk/client-iam';
+import { UserDetails, Policy, AccessKey, RoleDetails, Tag } from './types';
 
 export async function getIAMUsers(iamClient: IAMClient): Promise<UserDetails[]> {
   const { Users } = await iamClient.send(new ListUsersCommand({}));
@@ -7,10 +7,11 @@ export async function getIAMUsers(iamClient: IAMClient): Promise<UserDetails[]> 
 
   const users: UserDetails[] = await Promise.all(
     Users.map(async (user) => {
-      const [policies, accessKeys, mfaDevices] = await Promise.all([
+      const [policies, accessKeys, mfaDevices, tags] = await Promise.all([
         getUserPolicies(iamClient, user.UserName!),
         getUserAccessKeys(iamClient, user.UserName!),
-        getUserMFADevices(iamClient, user.UserName!)
+        getUserMFADevices(iamClient, user.UserName!),
+        getUserTags(iamClient, user.UserName!)
       ]);
 
       return {
@@ -19,12 +20,28 @@ export async function getIAMUsers(iamClient: IAMClient): Promise<UserDetails[]> 
         lastUsed: user.PasswordLastUsed?.toISOString(),
         policies,
         hasMFA: mfaDevices.length > 0,
-        accessKeys
+        accessKeys,
+        tags
       };
     })
   );
 
   return users;
+}
+
+async function getUserTags(iamClient: IAMClient, userName: string): Promise<Tag[]> {
+  try {
+    const { Tags } = await iamClient.send(new ListUserTagsCommand({ UserName: userName }));
+    return (Tags || []).filter((tag): tag is Tag => 
+      tag.Key !== undefined && tag.Value !== undefined
+    ).map(tag => ({
+      Key: tag.Key!,
+      Value: tag.Value!
+    }));
+  } catch (error) {
+    console.warn(`Failed to fetch tags for user ${userName}:`, error);
+    return [];
+  }
 }
 
 async function getUserPolicies(iamClient: IAMClient, userName: string): Promise<Policy[]> {
@@ -105,7 +122,10 @@ export async function getIAMRoles(iamClient: IAMClient): Promise<RoleDetails[]> 
 
   const roles: RoleDetails[] = await Promise.all(
     Roles.map(async (role) => {
-      const policies = await getRolePolicies(iamClient, role.RoleName!);
+      const [policies, tags] = await Promise.all([
+        getRolePolicies(iamClient, role.RoleName!),
+        getRoleTags(iamClient, role.RoleName!)
+      ]);
 
       return {
         roleName: role.RoleName!,
@@ -115,7 +135,8 @@ export async function getIAMRoles(iamClient: IAMClient): Promise<RoleDetails[]> 
         trustPolicy: role.AssumeRolePolicyDocument,
         provider: 'aws' as const,
         type: 'role' as const,
-        policies
+        policies,
+        tags
       };
     })
   );
@@ -153,4 +174,19 @@ async function getRolePolicies(iamClient: IAMClient, roleName: string): Promise<
   }
 
   return policies;
+}
+
+async function getRoleTags(iamClient: IAMClient, roleName: string): Promise<Tag[]> {
+  try {
+    const { Tags } = await iamClient.send(new ListRoleTagsCommand({ RoleName: roleName }));
+    return (Tags || []).filter((tag): tag is Tag => 
+      tag.Key !== undefined && tag.Value !== undefined
+    ).map(tag => ({
+      Key: tag.Key!,
+      Value: tag.Value!
+    }));
+  } catch (error) {
+    console.warn(`Failed to fetch tags for role ${roleName}:`, error);
+    return [];
+  }
 } 

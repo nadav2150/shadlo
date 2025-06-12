@@ -13,6 +13,11 @@ export interface AccessKey {
   status: 'Active' | 'Inactive';
 }
 
+export interface Tag {
+  Key: string;
+  Value: string;
+}
+
 export interface UserPolicies {
   inline: Policy[];
   attached: Policy[];
@@ -35,6 +40,7 @@ export interface UserDetails {
   accessKeys?: AccessKey[];
   provider?: 'aws' | 'azure' | 'gcp';
   riskAssessment?: RiskAssessment;
+  tags?: Tag[];
 }
 
 export interface RiskAssessment {
@@ -61,4 +67,5 @@ export interface RoleDetails {
   description?: string;
   trustPolicy?: string;
   riskAssessment?: RiskAssessment;
+  tags?: Tag[];
 } 
