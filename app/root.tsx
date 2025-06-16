@@ -123,6 +123,7 @@ export default function App() {
                         location.pathname !== "/sign-in" && 
                         location.pathname !== "/providers" && 
                         location.pathname !== "/entities" && 
+                        location.pathname !== "/timeline" &&
                         location.pathname !== "/settings" &&
                         !location.pathname.startsWith("/api/") &&
                         !location.pathname.startsWith("/build/") &&

@@ -8,7 +8,8 @@ import {
   Shield, 
   Settings,
   ChevronRight,
-  Users
+  Users,
+  Clock
 } from "lucide-react";
 import { Button } from "./ui/button";
 import type { loader as rootLoader } from "~/root";
@@ -21,6 +22,7 @@ export default function AppSidebar() {
     { to: "/", label: "Dashboard", icon: LayoutDashboard },
     { to: "/providers", label: "Providers", icon: Server },
     { to: "/entities", label: "Entities", icon: Users },
+    { to: "/timeline", label: "Timeline", icon: Clock },
     { to: "/settings", label: "Settings", icon: Settings },
   ];
 
